@@ -1,0 +1,8 @@
+# Bağımlılıklar
+node_modules/
+
+# Gizli Çevre Değişkenleri
+.env
+
+# Loglar
+*.log

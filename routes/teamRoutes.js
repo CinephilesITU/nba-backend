@@ -1,22 +1,26 @@
 // routes/teamRoutes.js
 
 const express = require('express');
-const router = express.Router(); // Express'in yönlendirici özelliğini kullanıyoruz
+const router = express.Router();
 
-// Controller'ımızı (işi yapacak olanı) çağırıyoruz
+// -----------------------------------------------------------------
+// HATA BURADAYDI:
+// Muhtemelen aşağıdaki 'require' satırını silmiştin veya
+// 'teamController' yerine { getAllTeams, getTeamById } yazmıştın.
+// 'teamController' adında bir değişkene ihtiyacımız var.
+
 const teamController = require('../controllers/teamController');
 
-// --- ROTALAR ---
+// -----------------------------------------------------------------
 
-// Ana rota: '/'
-// Bu dosya /api/v1/teams'e bağlandığı için
-// buradaki '/' aslında http://localhost:5001/api/v1/teams anlamına gelecek.
-router.get('/', teamController.getAllTeams); 
-// Dikkat et: getAllTeams() şeklinde ÇAĞIRMIYORUZ.
-// Sadece referansını veriyoruz. Express, istek gelince onu çalıştıracak.
 
-// Başka bir rota eklersek (örn: tek bir takımı id ile getirme)
-// router.get('/:id', teamController.getTeamById);
+// Ana rota: '/' (Tüm takımlar)
+// 'teamController.getAllTeams'i çağırır
+router.get('/', teamController.getAllTeams);
 
-// Bu router'ı ana index.js dosyasının kullanabilmesi için "export" ediyoruz.
+// ID'ye göre tek takım rotası (Senin hatan bu satırdaydı)
+// 'teamController.getTeamById'i çağırır
+router.get('/:id', teamController.getTeamById);
+
+
 module.exports = router;

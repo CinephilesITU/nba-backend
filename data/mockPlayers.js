@@ -1,34 +1,34 @@
 // data/mockPlayers.js
+// Bu, SQL'deki 'Player' tablosunu taklit eder.
 
-// Proposal'a göre: playerID, teamID, playerName, position, headshotUrl 
 const mockPlayers = [
     {
         playerid: 203954,
-        teamid: 1610612737, // Atlanta Hawks'ın ID'si (mockTeams.js'ten)
+        teamid: 1610612737, // Atlanta Hawks
         playername: "Trae Young",
         position: "G",
-        headshoturl: "https://example.com/trae_young.png"
+        headshoturl: "https://cdn.nba.com/headshots/nba/latest/1040x760/203954.png"
     },
     {
         playerid: 1628369,
-        teamid: 1610612738, // Boston Celtics'in ID'si
+        teamid: 1610612738, // Boston Celtics
         playername: "Jayson Tatum",
         position: "F-G",
-        headshoturl: "https://example.com/jayson_tatum.png"
+        headshoturl: "https://cdn.nba.com/headshots/nba/latest/1040x760/1628369.png"
     },
     {
         playerid: 2544,
-        teamid: 1610612747, // Los Angeles Lakers'ın ID'si
+        teamid: 1610612747, // Los Angeles Lakers
         playername: "LeBron James",
         position: "F",
-        headshoturl: "https://example.com/lebron_james.png"
+        headshoturl: "https://cdn.nba.com/headshots/nba/latest/1040x760/2544.png"
     },
     {
         playerid: 1629027,
         teamid: 1610612747, // Los Angeles Lakers
         playername: "Rui Hachimura",
         position: "F",
-        headshoturl: "https://example.com/rui_hachimura.png"
+        headshoturl: "https://cdn.nba.com/headshots/nba/latest/1040x760/1629027.png"
     }
 ];
 

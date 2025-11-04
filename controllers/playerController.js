@@ -2,6 +2,9 @@
 
 // Sahte oyuncu verimizi çağırıyoruz
 const { mockPlayers } = require('../data/mockPlayers');
+const { mockPlayerRegularStats } = require('../data/mockPlayerRegularStats');
+const { mockPlayerPlayoffStats } = require('../data/mockPlayerPlayoffStats');
+// const db = require('../db'); //  veritabanı bağlantısı
 
 // "Tüm oyuncuları getir" fonksiyonu
 const getAllPlayers = (req, res) => {

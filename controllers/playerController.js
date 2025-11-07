@@ -1,47 +1,57 @@
 // controllers/playerController.js
 
-// Sahte oyuncu verimizi çağırıyoruz
-const { mockPlayers } = require('../data/mockPlayers');
-const { mockPlayerRegularStats } = require('../data/mockPlayerRegularStats');
-const { mockPlayerPlayoffStats } = require('../data/mockPlayerPlayoffStats');
-// const db = require('../db'); //  veritabanı bağlantısı
+// Sahte veri importlarını siliyoruz. Onların yerine veritabanı bağlantımızı çağırıyoruz.
+const pool = require('../db'); // db.js'den gelen MySQL bağlantı havuzu
 
 // "Tüm oyuncuları getir" fonksiyonu
-const getAllPlayers = (req, res) => {
+// Fonksiyonu 'async' olarak işaretliyoruz çünkü veritabanı işlemleri zaman alır.
+const getAllPlayers = async (req, res) => {
     try {
+        // SQL sorgumuzu yazıyoruz.
+        const query = "SELECT * FROM Player";
+
+        // Veritabanından veriyi çekiyoruz. 'await' ile işlemin bitmesini bekliyoruz.
+        const [rows] = await pool.query(query);
+
+        // Başarılı bir şekilde veriyi istemciye (frontend'e) gönderiyoruz.
         res.status(200).json({
             status: "success",
-            results: mockPlayers.length,
+            results: rows.length,
             data: {
-                players: mockPlayers,
+                players: rows,
             }
         });
     } catch (err) {
+        console.error("Tüm oyuncuları alırken hata:", err); // Hatayı konsola yazdır
         res.status(500).json({
             status: "error",
             message: "Sunucuda bir hata oluştu"
         });
     }
 };
-const getPlayerById = (req, res) => {
+
+// "ID'ye göre tek bir oyuncu getir" fonksiyonu
+const getPlayerById = async (req, res) => {
     try {
-        // 1. İstek atılan ID'yi al (req.params.id)
-        // Gelen ID string'dir, onu sayıya (integer) çevirmemiz lazım
+        // 1. İstek atılan ID'yi al
         const id = parseInt(req.params.id);
 
-        // 2. mockPlayers dizisi içinde bu ID'ye sahip oyuncuyu bul
-        const player = mockPlayers.find(p => p.playerid === id);
+        // 2. SQL sorgusunu yaz. SQL Injection'ı önlemek için '?' kullanıyoruz.
+        const query = "SELECT * FROM Player WHERE PlayerID = ?";
 
-        // 3. Oyuncuyu bulursak...
-        if (player) {
+        // 3. Veritabanından sorguyu çalıştır. ID'yi ikinci parametre olarak güvenli bir şekilde gönderiyoruz.
+        const [rows] = await pool.query(query, [id]);
+
+        // 4. Oyuncuyu bulursak... (rows dizisinde en az bir eleman varsa)
+        if (rows.length > 0) {
             res.status(200).json({
                 status: "success",
                 data: {
-                    player: player,
+                    player: rows[0], // Dönen dizinin ilk elemanı bizim oyuncumuzdur.
                 }
             });
         } else {
-            // 4. Oyuncuyu bulamazsak... (404 Not Found hatası)
+            // 5. Oyuncuyu bulamazsak...
             res.status(404).json({
                 status: "fail",
                 message: "Bu ID ile bir oyuncu bulunamadı"
@@ -49,6 +59,7 @@ const getPlayerById = (req, res) => {
         }
 
     } catch (err) {
+        console.error(`ID'si ${req.params.id} olan oyuncuyu alırken hata:`, err);
         res.status(500).json({
             status: "error",
             message: "Sunucuda bir hata oluştu"
@@ -56,6 +67,7 @@ const getPlayerById = (req, res) => {
     }
 };
 
+// Bu fonksiyonları dışa aktarıyoruz ki 'routes' içinde kullanılabilsin.
 module.exports = {
     getAllPlayers,
     getPlayerById

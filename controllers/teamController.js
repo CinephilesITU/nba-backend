@@ -1,23 +1,23 @@
 // controllers/teamController.js
 
-// 1. Mock verilerini (sahte verileri) çağır
-//    (Eğer bu dosyalar yoksa, bir önceki adıma dönüp oluşturmalısın)
-const { mockTeams } = require('../data/mockTeams');
-const { mockTeamStats } = require('../data/mockTeamStats');
-const { mockOpponentStats } = require('../data/mockOpponentStats');
+// db baglantisi
+const pool = require('../db'); 
 
-// 2. Fonksiyon: Tüm takımları getir
-const getAllTeams = (req, res) => {
-    // Bu fonksiyon sende zaten olmalı, tüm takımları listeler
+// butun takimlar
+const getAllTeams = async (req, res) => {
     try {
+        const query = "SELECT TeamID, TeamName, TeamAbbreviation, LogoURL FROM Team";
+        const [rows] = await pool.query(query);
+
         res.status(200).json({
             status: "success",
-            results: mockTeams.length,
+            results: rows.length,
             data: {
-                teams: mockTeams,
+                teams: rows,
             }
         });
     } catch (err) {
+        console.error("Takimlari alirken hata:", err);
         res.status(500).json({
             status: "error",
             message: "Sunucuda bir hata oluştu"
@@ -25,47 +25,39 @@ const getAllTeams = (req, res) => {
     }
 };
 
-
-// 3. EKSİK FONKSİYON: ID'ye göre tek takımı getir
-//    Hatanın sebebi bu fonksiyonun eksik olmasıydı.
-const getTeamById = (req, res) => {
+// id'ye gore tek takim
+const getTeamById = async (req, res) => {
     try {
         const id = parseInt(req.params.id);
+
+        // takim, takim istatistik ve rakip istatistik tablolari joinlendi
+        const query = `
+            SELECT * 
+            FROM Team t
+            LEFT JOIN TeamStats ts ON t.TeamID = ts.TeamID
+            LEFT JOIN OpponentStats os ON t.TeamID = os.TeamID
+            WHERE t.TeamID = ?
+        `;
         
-        // 1. Takımın temel bilgilerini bul
-        const teamInfo = mockTeams.find(t => t.teamid === id);
-        
-        if (!teamInfo) {
-            // Eğer takımı bulamazsa 404 hatası ver
-            return res.status(404).json({
+        const [rows] = await pool.query(query, [id]);
+
+        // takim yoksa hata ver
+        if (rows.length > 0) {
+            res.status(200).json({
+                status: "success",
+                data: {
+                    team: rows[0],
+                }
+            });
+        } else {
+            res.status(404).json({
                 status: "fail",
-                message: "Bu ID ile bir takım bulunamadı"
+                message: "Bu ID ile bir takim bulunamadi"
             });
         }
-        
-        // 2. Takımın istatistiklerini bul
-        const teamStats = mockTeamStats.find(s => s.teamid === id) || null;
-        
-        // 3. Rakip istatistiklerini bul
-        const opponentStats = mockOpponentStats.find(o => o.teamid === id) || null;
-        
-        // 4. Tüm veriyi birleştir
-        const fullTeamData = {
-            ...teamInfo, // Temel bilgiler (isim, logo...)
-            teamStats: teamStats,
-            opponentStats: opponentStats
-        };
-        
-        // 5. Birleştirilmiş veriyi döndür
-        res.status(200).json({
-            status: "success",
-            data: {
-                team: fullTeamData,
-            }
-        });
-        
+
     } catch (err) {
-        console.error(err.message);
+        console.error(`ID'si ${req.params.id} olan takimi alirken hata:`, err);
         res.status(500).json({
             status: "error",
             message: "Sunucuda bir hata oluştu"
@@ -73,11 +65,6 @@ const getTeamById = (req, res) => {
     }
 };
 
-
-// 4. Her iki fonksiyonu da dışa aktar (export et)
-//    Senin hatan 33. satırda 'getTeamById' tanımlı değilken
-//    buraya yazmandı. Şimdi fonksiyonu tanımladığımız için
-//    bu kod doğru çalışacak.
 module.exports = {
     getAllTeams,
     getTeamById

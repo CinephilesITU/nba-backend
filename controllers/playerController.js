@@ -3,7 +3,8 @@
 // Sahte veri importlarını siliyoruz. Onların yerine veritabanı bağlantımızı çağırıyoruz.
 const pool = require('../db'); // db.js'den gelen MySQL bağlantı havuzu
 
-// "Tüm oyuncuları getir" fonksiyonu
+const { mockPlayerRegularStats } = require('../data/mockPlayerRegularStats'); // GEÇİCİ
+
 // Fonksiyonu 'async' olarak işaretliyoruz çünkü veritabanı işlemleri zaman alır.
 const getAllPlayers = async (req, res) => {
     try {
@@ -67,8 +68,43 @@ const getPlayerById = async (req, res) => {
     }
 };
 
-// Bu fonksiyonları dışa aktarıyoruz ki 'routes' içinde kullanılabilsin.
+
+// --- YENİ FONKSİYON: Liderlik Tablosu (Mock Data Kullanıyor) ---
+const getPlayerLeaderboard = (req, res) => {
+    try {
+        const stat = req.params.stat.toUpperCase(); 
+        
+        // Veriyi mock dosyadan oku
+        let players = [...mockPlayerRegularStats]; 
+
+        // Veriyi sırala
+        players.sort((a, b) => b[stat.toLowerCase()] - a[stat.toLowerCase()]);
+        
+        const leaderboard = players.slice(0, 5); // İlk 5'i al
+
+        res.status(200).json({
+            status: "success",
+            stat: stat,
+            results: leaderboard.length,
+            data: {
+                leaderboard: leaderboard,
+            }
+        });
+
+    } catch (err) {
+        console.error(err.message);
+        res.status(400).json({
+            status: "error",
+            message: "İstatistik bulunamadı veya geçersiz."
+        });
+    }
+};
+
+// 3. 'module.exports' Satırını Güncelle:
+//    Dosyanın en altındaki 'module.exports' satırını
+//    aşağıdaki gibi 3 fonksiyonu da içerecek şekilde GÜNCELLE:
 module.exports = {
     getAllPlayers,
-    getPlayerById
+    getPlayerById,
+    getPlayerLeaderboard // YENİ EKLENDİ
 };

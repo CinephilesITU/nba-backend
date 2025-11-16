@@ -1,21 +1,39 @@
 // data/mockTeamStats.js
-// Bu, SQL'deki 'TeamStats' tablosunu taklit eder.
+// 'getTeamLeaderboard' fonksiyonu için geçici veri
+// YENİ: Filtreleme yapabilmek için 'conferencename' eklendi.
 
 const mockTeamStats = [
-    {
-        teamid: 1610612737, // Atlanta Hawks
-        gp: 82, w: 36, l: 46, w_pct: 0.439,
-        def_rating_rank: 27, dreb_rank: 19, stl_rank: 3, blk_rank: 18
+    { 
+        teamid: 1610612738, 
+        teamname: "Boston Celtics", 
+        conferencename: "East", // Filtre için
+        w: 64, 
+        def_rating_rank: 2, 
+        stl_rank: 20 
     },
-    {
-        teamid: 1610612738, // Boston Celtics
-        gp: 82, w: 64, l: 18, w_pct: 0.780,
-        def_rating_rank: 2, dreb_rank: 1, stl_rank: 20, blk_rank: 1
+    { 
+        teamid: 1610612747, 
+        teamname: "Los Angeles Lakers", 
+        conferencename: "West", // Filtre için
+        w: 47, 
+        def_rating_rank: 17, 
+        stl_rank: 14 
     },
-    {
-        teamid: 1610612747, // Los Angeles Lakers
-        gp: 82, w: 47, l: 35, w_pct: 0.573,
-        def_rating_rank: 17, dreb_rank: 18, stl_rank: 14, blk_rank: 11
+    { 
+        teamid: 1610612737, 
+        teamname: "Atlanta Hawks", 
+        conferencename: "East", // Filtre için
+        w: 36, 
+        def_rating_rank: 27, 
+        stl_rank: 3 
+    },
+    { 
+        teamid: 1610612745, // Örnek olarak 4. bir takım
+        teamname: "Houston Rockets", 
+        conferencename: "West", // Filtre için
+        w: 41, 
+        def_rating_rank: 10, 
+        stl_rank: 2 
     }
 ];
 

@@ -3,16 +3,22 @@
 const express = require('express');
 const router = express.Router();
 
-// Player Controller'ı çağırıyoruz
+// Controller'dan ÜÇ fonksiyonu da çağır
 const { 
     getAllPlayers, 
-    getPlayerById 
+    getPlayerById,
+    getPlayerLeaderboard // YENİ
 } = require('../controllers/playerController');
-// Ana rota: '/' (http://localhost:5001/api/v1/players anlamına gelecek)
-// Ana rota: '/' (Tüm oyuncular)
-router.get('/', getAllPlayers);
 
-// YENİ ROTA: '/:id' (Tek bir oyuncu)
+
+// --- VERİTABANI GEREKTİREN YOLLAR ---
+// (XAMPP çalışana kadar 500 hatası vermeleri normaldir)
+router.get('/', getAllPlayers);
 router.get('/:id', getPlayerById);
+
+// --- MOCK DATA KULLANAN YENİ YOL ---
+// (Bu, XAMPP çalışmasa bile çalışacaktır)
+router.get('/leaderboard/:stat', getPlayerLeaderboard);
+
 
 module.exports = router;

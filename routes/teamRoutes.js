@@ -3,24 +3,28 @@
 const express = require('express');
 const router = express.Router();
 
-// -----------------------------------------------------------------
-// HATA BURADAYDI:
-// Muhtemelen aşağıdaki 'require' satırını silmiştin veya
-// 'teamController' yerine { getAllTeams, getTeamById } yazmıştın.
-// 'teamController' adında bir değişkene ihtiyacımız var.
+// 1. GÜNCELLEME:
+// Controller'dan artık 3 fonksiyonu da çağırıyoruz.
+// (Arkadaşının 'teamController' objesi yerine bu daha temizdir)
+const { 
+    getAllTeams, 
+    getTeamById,
+    getTeamLeaderboard // Bizim bu commit için eklediğimiz YENİ fonksiyon
+} = require('../controllers/teamController');
 
-const teamController = require('../controllers/teamController');
 
-// -----------------------------------------------------------------
-
-
+// 2. ARKADAŞININ EKLEDİKLERİ (Bunlar doğru ve kalmalı)
 // Ana rota: '/' (Tüm takımlar)
-// 'teamController.getAllTeams'i çağırır
-router.get('/', teamController.getAllTeams);
+router.get('/', getAllTeams);
 
-// ID'ye göre tek takım rotası (Senin hatan bu satırdaydı)
-// 'teamController.getTeamById'i çağırır
-router.get('/:id', teamController.getTeamById);
+// ID'ye göre tek takım rotası
+router.get('/:id', getTeamById);
+
+
+// 3. YENİ ÖZELLİK (Bu satır eksikti)
+// Liderlik Tablosu Rotası (Hem sıralama hem filtreleme yapar)
+// Örn: /leaderboard/W?conference=East
+router.get('/leaderboard/:stat', getTeamLeaderboard);
 
 
 module.exports = router;

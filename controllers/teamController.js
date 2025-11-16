@@ -2,7 +2,7 @@
 
 // db baglantisi
 const pool = require('../db'); 
-
+const { mockTeamStats } = require('../data/mockTeamStats'); //
 // butun takimlar
 const getAllTeams = async (req, res) => {
     try {
@@ -65,7 +65,58 @@ const getTeamById = async (req, res) => {
     }
 };
 
+// --- 2. YENİ MOCK DATA FONKSİYONU (Commit için Geliştirme) ---
+
+
+const getTeamLeaderboard = (req, res) => {
+    try {
+        // 1. Sıralama parametresini al (Örn: W, DEF_RATING_RANK)
+        const stat = req.params.stat.toLowerCase(); 
+
+        // 2. FİLTRELEME parametresini al (Örn: East, West) (Bu isteğe bağlıdır)
+        const { conference } = req.query; 
+
+        let teams = [...mockTeamStats]; 
+
+        // 3. (YENİ ADIM) Önce Konferansa Göre FİLTRELE
+        if (conference) {
+            teams = teams.filter(t => t.conferencename.toLowerCase() === conference.toLowerCase());
+        }
+
+        // 4. Sonra SIRALA
+        if (stat.includes('_rank')) {
+            // Sıralama (Rank) ise: 1, 2, 3... (Küçükten Büyüğe)
+            teams.sort((a, b) => a[stat] - b[stat]); 
+        } else {
+            // Değer (Value) ise: 64, 47... (Büyükten Küçüğe)
+            teams.sort((a, b) => b[stat] - a[stat]);
+        }
+
+        // 5. İlk 5'i (veya daha azı) al
+        const leaderboard = teams.slice(0, 5); 
+
+        res.status(200).json({
+            status: "success",
+            stat: stat.toUpperCase(),
+            filter: conference || "All", // Filtre uygulandı mı?
+            results: leaderboard.length,
+            data: {
+                leaderboard: leaderboard,
+            }
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(400).json({
+            status: "error",
+            message: "İstatistik bulunamadı veya geçersiz."
+        });
+    }
+};
+
+
+// --- 3. TÜM FONKSİYONLARI DIŞA AKTAR ---
 module.exports = {
     getAllTeams,
-    getTeamById
+    getTeamById,
+    getTeamLeaderboard // YENİ EKLENDİ
 };

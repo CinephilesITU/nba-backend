@@ -17,11 +17,7 @@ const getAllTeams = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("Takimlari alirken hata:", err);
-        res.status(500).json({
-            status: "error",
-            message: "Sunucuda bir hata oluştu"
-        });
+        return next(err);
     }
 };
 
@@ -57,11 +53,7 @@ const getTeamById = async (req, res) => {
         }
 
     } catch (err) {
-        console.error(`ID'si ${req.params.id} olan takimi alirken hata:`, err);
-        res.status(500).json({
-            status: "error",
-            message: "Sunucuda bir hata oluştu"
-        });
+        return next(err);
     }
 };
 
@@ -105,11 +97,7 @@ const getTeamLeaderboard = (req, res) => {
             }
         });
     } catch (err) {
-        console.error(err.message);
-        res.status(400).json({
-            status: "error",
-            message: "İstatistik bulunamadı veya geçersiz."
-        });
+        return next(err);
     }
 };
 

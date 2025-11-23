@@ -6,7 +6,7 @@ const morgan = require('morgan'); // Morgan'ı kurduysan kalsın, kurmadıysan b
 
 const teamRoutes = require('./routes/teamRoutes');
 const playerRoutes = require('./routes/playerRoutes');
-
+const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 const PORT = 5001; 
@@ -28,7 +28,7 @@ app.get('/', (req, res) => {
 // teamRoutes (routes/teamRoutes.js) dosyasına yönlendir.
 app.use('/api/v1/teams', teamRoutes);
 app.use('/api/v1/players', playerRoutes);
-
+app.use(errorHandler);
 // Sunucuyu çalıştır
 app.listen(PORT, () => {
     console.log(`Refactored Sunucu http://localhost:${PORT} adresinde çalışıyor...`);

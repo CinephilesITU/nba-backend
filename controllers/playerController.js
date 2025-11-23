@@ -23,11 +23,7 @@ const getAllPlayers = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("Tüm oyuncuları alırken hata:", err); // Hatayı konsola yazdır
-        res.status(500).json({
-            status: "error",
-            message: "Sunucuda bir hata oluştu"
-        });
+        return next(err);
     }
 };
 
@@ -60,11 +56,7 @@ const getPlayerById = async (req, res) => {
         }
 
     } catch (err) {
-        console.error(`ID'si ${req.params.id} olan oyuncuyu alırken hata:`, err);
-        res.status(500).json({
-            status: "error",
-            message: "Sunucuda bir hata oluştu"
-        });
+        return next(err);
     }
 };
 
@@ -92,11 +84,7 @@ const getPlayerLeaderboard = (req, res) => {
         });
 
     } catch (err) {
-        console.error(err.message);
-        res.status(400).json({
-            status: "error",
-            message: "İstatistik bulunamadı veya geçersiz."
-        });
+        return next(err);
     }
 };
 

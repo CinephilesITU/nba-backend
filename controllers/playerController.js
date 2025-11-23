@@ -60,6 +60,25 @@ const getPlayerById = async (req, res) => {
     }
 };
 
+const getPlayersByTeamId = async (req, res, next) => {
+    try {
+        const { teamId } = req.params; // URL'den takım ID'sini al
+
+        const query = "SELECT PlayerID, PlayerName, Position, HeadshotURL FROM Player WHERE TeamID = ?";
+        
+        const [players] = await pool.query(query, [teamId]);
+
+        res.status(200).json({
+            status: "success",
+            results: players.length,
+            data: {
+                players: players,
+            }
+        });
+    } catch (err) {
+        return next(err);
+    }
+};
 
 // --- YENİ FONKSİYON: Liderlik Tablosu (Mock Data Kullanıyor) ---
 const getPlayerLeaderboard = (req, res) => {
@@ -94,5 +113,6 @@ const getPlayerLeaderboard = (req, res) => {
 module.exports = {
     getAllPlayers,
     getPlayerById,
+    getPlayersByTeamId, // bu da yeni
     getPlayerLeaderboard // YENİ EKLENDİ
 };

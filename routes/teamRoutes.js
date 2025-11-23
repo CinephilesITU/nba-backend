@@ -3,28 +3,32 @@
 const express = require('express');
 const router = express.Router();
 
-// 1. GÜNCELLEME:
-// Controller'dan artık 3 fonksiyonu da çağırıyoruz.
-// (Arkadaşının 'teamController' objesi yerine bu daha temizdir)
+// Team controller'dan gelen fonksiyonlar
 const { 
     getAllTeams, 
     getTeamById,
-    getTeamLeaderboard // Bizim bu commit için eklediğimiz YENİ fonksiyon
+    getTeamLeaderboard
 } = require('../controllers/teamController');
 
+// YENİ 1:
+const { getPlayersByTeamId } = require('../controllers/playerController');
 
-// 2. ARKADAŞININ EKLEDİKLERİ (Bunlar doğru ve kalmalı)
+
+// --- ROTALAR ---
+
 // Ana rota: '/' (Tüm takımlar)
 router.get('/', getAllTeams);
 
-// ID'ye göre tek takım rotası
-router.get('/:id', getTeamById);
-
-
-// 3. YENİ ÖZELLİK (Bu satır eksikti)
-// Liderlik Tablosu Rotası (Hem sıralama hem filtreleme yapar)
-// Örn: /leaderboard/W?conference=East
+// DİKKAT: Liderlik rotasını :id'li rotadan ÖNCEYE ALDIK
+// Sebebi: Express'in 'leaderboard' kelimesini bir ID sanmasını önlemek
 router.get('/leaderboard/:stat', getTeamLeaderboard);
+
+// YENİ 2:
+// Bir takıma ait oyuncuları getirir (Örn: /teams/1610612747/players)
+router.get('/:teamId/players', getPlayersByTeamId);
+
+// ID'ye göre tek takım rotası (EN SONDA OLMALI)
+router.get('/:id', getTeamById);
 
 
 module.exports = router;

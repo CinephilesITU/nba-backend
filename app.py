@@ -73,7 +73,7 @@ def get_player_by_id(id):
                 sql_stats = f"""
                     SELECT 
                         SUM(GP_X) as GP_X, AVG(MIN_X) as MIN_X, AVG(PTS) as PTS, AVG(REB) as REB, 
-                        AVG(AST) as AST, AVG(steal) as steal, AVG(BLK_X) as BLK_X, 
+                        AVG(AST) as AST, AVG(steal) as steal,
                         AVG(efficiency) as efficiency, '{location_param}' as location, '{season_param}' as season_type
                     FROM {table_name} 
                     WHERE playerID = %s GROUP BY playerID
@@ -300,7 +300,7 @@ def get_leaders():
     
     category = request.args.get('category', 'PTS')
     season = request.args.get('season', 'REGULAR')
-    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'STL', 'BLK_X']
+    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'STL']
     if category not in valid_columns: return jsonify({"error": "Gecersiz kategori"}), 400
 
     table_name = "PlayerRegularSeasonPerformance" if season == 'REGULAR' else "PlayerPlayoffsPerformance"

@@ -1,265 +1,208 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from models import db, Team, Player, PlayerRegularSeason
+import mysql.connector
+import random
 
 app = Flask(__name__)
 CORS(app) # Frontend ile iletişimi açar
 
-# Veritabanı Ayarı
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///nba_stats.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-db.init_app(app)
-
-# İlk çalıştırmada tabloları oluştur
-with app.app_context():
-    db.create_all()
-
-# --- API ENDPOINTLERİ ---
+# ---------------------------------------------------------
+# 1. VERİTABANI BAĞLANTISI
+# ---------------------------------------------------------
+def get_db_connection():
+    try:
+        conn = mysql.connector.connect(
+            host="localhost",
+            user="root",        # Kullanıcı adı
+            password="baris0624",        # Şifre 
+            database="nba_db" 
+        )
+        return conn
+    except mysql.connector.Error as err:
+        print(f"HATA: Veritabanına bağlanılamadı. Detay: {err}")
+        return None
 
 @app.route('/')
 def home():
-    return "NBA Backend Calisiyor!"
+    return "NBA Backend Calisiyor (SQL Versiyon)!"
 
-# 1. Tüm Oyuncuları Listele (Frontend: Players Page)
-@app.route('/api/players', methods=['GET'])
+# ---------------------------------------------------------
+# 2. READ: TÜM OYUNCULARI LİSTELE (GET)
+# ---------------------------------------------------------
+@app.route('/api/v1/players', methods=['GET'])
 def get_players():
-    # Sayfalama mantığı (Pagination) eklenebilir
-    players = Player.query.limit(100).all() # Şimdilik ilk 50'yi getir
-    return jsonify([p.to_dict() for p in players])
-
-# 2. Tek Oyuncu Detayı (Frontend: Player Profile)
-@app.route('/api/players/<int:id>', methods=['GET'])
-def get_player_detail(id):
-    player = Player.query.get_or_404(id)
-    data = player.to_dict()
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     
-    # İstatistikleri "stats" objesi altında topluyoruz
-    data['stats'] = {
-        'regular': None,
-        'playoffs': None
-    }
+    cursor = conn.cursor(dictionary=True)
+    
+    # Yeni şemaya göre tablo adı: PLAYERS (veya Players)
+    sql = "SELECT * FROM PLAYERS LIMIT 100"
+    
+    try:
+        cursor.execute(sql)
+        players = cursor.fetchall()
+        return jsonify({"status": "success", "results": len(players), "data": {"players": players}})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-    # 1. Normal Sezon Verisi Varsa Ekle
-    if player.reg_season_stats:
-        rs = player.reg_season_stats
-        data['stats']['regular'] = {
-            'GP': rs.GP_X,
-            'MIN': rs.MIN_X,
-            'PTS': rs.PTS,
-            'AST': rs.AST,
-            'REB': rs.REB,
-            'STL': rs.steal,
-            'BLK': rs.BLK,
-            'EFF': rs.efficiency,
-            'FG_PCT': rs.FG_PCT
-        }
+# ---------------------------------------------------------
+# 3. READ: TEK OYUNCU DETAYI (GET)
+# ---------------------------------------------------------
+@app.route('/api/v1/players/<int:id>', methods=['GET'])
+def get_player_by_id(id):
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    
+    cursor = conn.cursor(dictionary=True)
+    
+    # Oyuncuyu bul
+    sql_player = "SELECT * FROM PLAYERS WHERE playerID = %s"
+    
+    try:
+        cursor.execute(sql_player, (id,))
+        player = cursor.fetchone()
+        
+        if player:
+            # İstatistiklerini çekelim (PlayerRegularSeasonPerformance tablosundan)
+            sql_stats = "SELECT * FROM PlayerRegularSeasonPerformance WHERE playerID = %s LIMIT 1"
+            cursor.execute(sql_stats, (id,))
+            stats = cursor.fetchone()
+            
+            # Oyuncu verisine istatistikleri de ekle
+            player['stats'] = stats
+            
+            return jsonify({"status": "success", "data": {"player": player}})
+        else:
+            return jsonify({"status": "fail", "message": "Oyuncu bulunamadı"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-    # 2. Playoff Verisi Varsa Ekle (YENİ EKLENEN KISIM)
-    if player.playoff_stats:
-        ps = player.playoff_stats
-        data['stats']['playoffs'] = {
-            'GP': ps.GP_X,
-            'MIN': ps.MIN_X,
-            'PTS': ps.PTS,
-            'AST': ps.AST,
-            'REB': ps.REB,
-            'STL': ps.steal,
-            'BLK': ps.BLK,
-            'EFF': ps.efficiency,
-            'FG_PCT': ps.FG_PCT
-        }
-
-    return jsonify(data)
-
-# 3. Tüm Takımları Listele (Frontend: Teams Page)
-@app.route('/api/teams', methods=['GET'])
+# ---------------------------------------------------------
+# 4. READ: TÜM TAKIMLARI LİSTELE (GET)
+# ---------------------------------------------------------
+@app.route('/api/v1/teams', methods=['GET'])
 def get_teams():
-    teams = Team.query.all()
-    return jsonify([t.to_dict() for t in teams])
-
-# ----------------------------------------------------------------
-# CRUD İŞLEMLERİ (CREATE, UPDATE, DELETE)
-# ----------------------------------------------------------------
-
-# --- VALIDASYON YARDIMCISI ---
-def validate_player_data(data):
-    """Gelen verinin kurallara uygunluğunu kontrol eder."""
-    errors = []
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     
-    # Kural 1: İsim Kontrolü
-    if 'playerName' in data and len(data['playerName']) < 2:
-        errors.append("Oyuncu ismi en az 2 karakter olmalıdır.")
-    
-    # Kural 2: Pozisyon Kontrolü (Sadece belirli pozisyonlar)
-    valid_positions = ['Guard', 'Forward', 'Center', 'G', 'F', 'C']
-    if 'position' in data and data['position'] not in valid_positions:
-        # İsteğe bağlı: Hata vermek yerine uyarabiliriz ama şimdilik katı olalım
-        pass # Şimdilik serbest bırakıyorum, çok kısıtlamayalım.
-        
-    # Kural 3: İstatistik Kontrolleri (Eğer veriyle birlikte istatistik gelirse)
-    # Negatif sayı girilmesini engelle
-    # (Bu örnekte temel veriyi kontrol ediyoruz, frontend istatistik göndermiyor ama hazırlık olsun)
-    
-    return errors
+    cursor = conn.cursor(dictionary=True)
+    try:
+        cursor.execute("SELECT * FROM TEAMS")
+        teams = cursor.fetchall()
+        return jsonify({"status": "success", "results": len(teams), "data": {"teams": teams}})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-# 4. YENİ OYUNCU EKLE (CREATE) 
-@app.route('/api/players', methods=['POST'])
+# ---------------------------------------------------------
+# 5. CREATE: YENİ OYUNCU EKLEME (POST)
+# ---------------------------------------------------------
+@app.route('/api/v1/players', methods=['POST'])
 def add_player():
-    data = request.json 
-    
-    # 1. Temel Eksiklik Kontrolü
-    if not data.get('playerName') or not data.get('teamID'):
-        return jsonify({'error': 'Eksik veri: playerName ve teamID zorunludur.'}), 400
-    
-    # 2. Mantıksal Validasyon (YENİ)
-    validation_errors = validate_player_data(data)
-    if validation_errors:
-        return jsonify({'error': 'Validasyon Hatası', 'details': validation_errors}), 400
-    
-    # ID Oluşturma
-    max_id = db.session.query(db.func.max(Player.playerID)).scalar() or 1000000
-    new_id = int(max_id) + 1
-    
-    try:
-        new_player = Player(
-            playerID=new_id,
-            teamID=data['teamID'],
-            playerName=data['playerName'],
-            position=data.get('position', 'Unknown'),
-            headshotUrl=data.get('headshotUrl', '')
-        )
-        db.session.add(new_player)
-        db.session.commit()
-        return jsonify({'message': 'Oyuncu başarıyla eklendi!', 'player': new_player.to_dict()}), 201
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-
-# 5. OYUNCU GÜNCELLE (UPDATE) 
-@app.route('/api/players/<int:id>', methods=['PUT'])
-def update_player(id):
-    player = Player.query.get_or_404(id)
     data = request.json
+    
+    # Validasyon
+    if not data.get('playerName') or not data.get('teamID'):
+        return jsonify({"error": "Eksik veri: playerName ve teamID zorunlu"}), 400
 
-    # Validasyon (YENİ)
-    validation_errors = validate_player_data(data)
-    if validation_errors:
-        return jsonify({'error': 'Validasyon Hatası', 'details': validation_errors}), 400
-
-    if 'playerName' in data:
-        player.playerName = data['playerName']
-    if 'teamID' in data:
-        player.teamID = data['teamID']
-    if 'position' in data:
-        player.position = data['position']
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    # Yeni bir ID uret
+    new_id = random.randint(1000000, 9999999)
+    
+    # Yeni şemaya uygun INSERT sorgusu
+    sql = """INSERT INTO PLAYERS (playerID, playerName, teamID, position, headshotUrl) 
+             VALUES (%s, %s, %s, %s, %s)"""
+    
+    val = (new_id, data['playerName'], data['teamID'], data.get('position', 'Unknown'), data.get('headshotUrl', ''))
     
     try:
-        db.session.commit()
-        return jsonify({'message': 'Oyuncu güncellendi!', 'player': player.to_dict()})
+        cursor.execute(sql, val)
+        conn.commit()
+        return jsonify({"status": "success", "message": "Oyuncu eklendi", "id": new_id}), 201
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-# 6. OYUNCU SİL (DELETE)
-@app.route('/api/players/<int:id>', methods=['DELETE'])
+# ---------------------------------------------------------
+# 6. DELETE: OYUNCU SİLME (DELETE)
+# ---------------------------------------------------------
+@app.route('/api/v1/players/<int:id>', methods=['DELETE'])
 def delete_player(id):
-    player = Player.query.get_or_404(id)
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
     
     try:
-        # Önce istatistikleri silmeliyiz (Cascade ayarı models.py'da yoksa elle sileriz)
-        # Ama models.py'da cascade tanımlamadıysak hata alabiliriz. 
-        # Şimdilik direkt oyuncuyu siliyoruz.
-        db.session.delete(player)
-        db.session.commit()
-        return jsonify({'message': f'{player.playerName} veritabanından silindi.'})
+        # Önce bu oyuncunun istatistiklerini sil (Foreign Key hatası almamak için)
+        cursor.execute("DELETE FROM PlayerRegularSeasonPerformance WHERE playerID = %s", (id,))
+        cursor.execute("DELETE FROM PlayerPlayoffsPerformance WHERE playerID = %s", (id,))
+        
+        # Sonra oyuncuyu sil
+        cursor.execute("DELETE FROM PLAYERS WHERE playerID = %s", (id,))
+        
+        conn.commit()
+        return jsonify({"status": "success", "message": f"Oyuncu (ID: {id}) silindi"})
     except Exception as e:
-        db.session.rollback()
-        return jsonify({'error': str(e)}), 500
-    
-# 7. OYUNCU ARAMA (SEARCH)
-@app.route('/api/players/search', methods=['GET'])
-def search_players():
-    query = request.args.get('q', '') # URL'den ?q=LeBron parametresini al
-    if not query:
-        return jsonify({'error': 'Arama terimi girilmedi.'}), 400
-    
-    # İsim içinde arama yap (Büyük/küçük harf duyarsız - ilike veya func.lower)
-    results = Player.query.filter(Player.playerName.ilike(f'%{query}%')).all()
-    
-    return jsonify([p.to_dict() for p in results])
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
-# 8. TAKIM DETAYI VE KADROSU (ROSTER)
-@app.route('/api/teams/<int:id>', methods=['GET'])
-def get_team_detail(id):
-    team = Team.query.get_or_404(id)
-    team_data = team.to_dict()
+# ---------------------------------------------------------
+# 7. COMPLEX QUERY (ZOR SORGULAR)
+# (Join 4 Table, Nested Query, Group By)
+# ---------------------------------------------------------
+@app.route('/api/v1/stats/complex', methods=['GET'])
+def get_complex_stats():
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor(dictionary=True)
     
-    # Takım Performans İstatistikleri
-    team_data['stats'] = {
-        'regular': None,
-        'playoffs': None
-    }
-
-    # Normal Sezon Sıralamaları
-    if team.reg_season_stats:
-        team_data['stats']['regular'] = {
-            'winRank': team.reg_season_stats.winRank,
-            'defRatingRank': team.reg_season_stats.defRatingRank,
-            'stealRank': team.reg_season_stats.stealRank,
-            'blockRank': team.reg_season_stats.blockRank
-        }
+    # SENARYO: Lig ortalamasından daha verimli (Efficiency) oynayan oyuncuların
+    # bulunduğu takımları listele ve bu takımlardaki "Yıldız Oyuncu" sayısını getir.
+    # Konferansa göre grupla.
     
-    # Playoff Sıralamaları (YENİ EKLENEN KISIM)
-    if team.playoff_stats:
-        team_data['stats']['playoffs'] = {
-            'winRank': team.playoff_stats.winRank,
-            'defRatingRank': team.playoff_stats.defRatingRank,
-            'stealRank': team.playoff_stats.stealRank,
-            'blockRank': team.playoff_stats.blockRank
-        }
-
-    # Kadroyu (Roster) Ekle
-    roster = []
-    for player in team.players:
-        p_data = player.to_dict()
-        # Kadro listesinde sadece ortalama sayıyı (PTS) göstermek yeterli olabilir
-        if player.reg_season_stats:
-             p_data['PTS'] = player.reg_season_stats.PTS
-        roster.append(p_data)
-        
-    team_data['roster'] = roster
-        
-    return jsonify(team_data)
-
-# 9. EN İYİLER (TOP PERFORMERS)
-# Örnek: /api/stats/top?category=PTS (Sayı kralları)
-@app.route('/api/stats/top', methods=['GET'])
-def get_top_performers():
-    category = request.args.get('category', 'PTS') # Varsayılan: Sayı (PTS)
-    limit = int(request.args.get('limit', 5)) # İlk 5 kişi
+    sql = """
+    SELECT 
+        t.teamName,
+        t.conference,
+        COUNT(p.playerID) as StarPlayerCount,
+        AVG(stats.efficiency) as AvgTeamEfficiency
+    FROM TEAMS t
+    JOIN PLAYERS p ON t.teamID = p.teamID
+    JOIN PlayerRegularSeasonPerformance stats ON p.playerID = stats.playerID
+    WHERE stats.efficiency > (
+        SELECT AVG(efficiency) FROM PlayerRegularSeasonPerformance -- NESTED QUERY
+    )
+    GROUP BY t.teamName, t.conference -- GROUP BY
+    ORDER BY StarPlayerCount DESC
+    """
     
-    # İstatistik tablosundan sıralama yapıyoruz
-    # desc() = Büyükten küçüğe sırala
-    if category == 'PTS':
-        stats = PlayerRegularSeason.query.order_by(PlayerRegularSeason.PTS.desc()).limit(limit).all()
-    elif category == 'AST':
-        stats = PlayerRegularSeason.query.order_by(PlayerRegularSeason.AST.desc()).limit(limit).all()
-    elif category == 'REB':
-        stats = PlayerRegularSeason.query.order_by(PlayerRegularSeason.REB.desc()).limit(limit).all()
-    elif category == 'EFF': # Verimlilik
-        stats = PlayerRegularSeason.query.order_by(PlayerRegularSeason.efficiency.desc()).limit(limit).all()
-    else:
-        return jsonify({'error': 'Geçersiz kategori. PTS, AST, REB, EFF kullanın.'}), 400
-
-    results = []
-    for stat in stats:
-        # İstatistiğin sahibi olan oyuncu bilgilerini de getir
-        player_info = stat.player.to_dict()
-        player_info['value'] = getattr(stat, category) # İstenen değeri ekle (Örn: 30.1)
-        results.append(player_info)
-        
-    return jsonify(results)    
+    try:
+        cursor.execute(sql)
+        results = cursor.fetchall()
+        return jsonify({"status": "success", "results": len(results), "data": results})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    # Node.js backend ile ayni portta (5001) calistiriyoruz
+    app.run(debug=True, port=5001)

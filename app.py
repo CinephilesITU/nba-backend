@@ -225,79 +225,37 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# B. TAKIM DETAYI VE KADROSU (SEZON FİLTRESİ + BLK_X EKLENDİ)
+# B. TAKIM DETAYI (SADECE TEAMS TABLOSU - DEBUG MODU)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    
     cursor = conn.cursor(dictionary=True)
     
-    # URL'den sezon parametresini al (Varsayılan: REGULAR)
-    season_param = request.args.get('season', 'REGULAR')
-    
-    # Hangi tablolara bakacağımızı seçiyoruz
-    if season_param == 'PLAYOFF':
-        team_stats_table = "TeamPlayoffsPerformance"
-        player_stats_table = "PlayerPlayoffsPerformance"
-    else:
-        team_stats_table = "TeamRegularSeasonPerformance"
-        player_stats_table = "PlayerRegularSeasonPerformance"
-    
     try:
-        # 1. Takım Temel Bilgisi
+        # SADECE ANA TABLOYA BAKIYORUZ
+        print(f"DEBUG: Takım ID {id} için TEAMS tablosu sorgulanıyor...")
+        
         cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
         team = cursor.fetchone()
         
         if team:
-            # 2. Takım İstatistikleri
-            sql_team_stats = f"SELECT * FROM {team_stats_table} WHERE teamID = %s"
-            cursor.execute(sql_team_stats, (id,))
-            team_stats = cursor.fetchone()
-            team['stats'] = team_stats if team_stats else {}
+            print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
             
-            # 3. Kadro (Roster) - BLK_X, AST, REB EKLENDİ
-            # Artık blok, asist ve ribaund ortalamaları da dönüyor.
-            sql_roster = f"""
-                SELECT 
-                    p.playerID, 
-                    p.playerName, 
-                    p.position, 
-                    p.headshotUrl, 
-                    AVG(s.PTS) as avg_pts,
-                    AVG(s.AST) as avg_ast,
-                    AVG(s.REB) as avg_reb,
-                    AVG(s.BLK_X) as avg_blk
-                FROM PLAYERS p
-                LEFT JOIN {player_stats_table} s ON p.playerID = s.playerID
-                WHERE p.teamID = %s
-                GROUP BY p.playerID, p.playerName, p.position, p.headshotUrl
-            """
-            cursor.execute(sql_roster, (id,))
-            roster = cursor.fetchall()
-
-            # --- Decimal Hatası Düzeltme & Null Kontrolü ---
-            final_roster = []
-            for player in roster:
-                # Helper fonksiyon: None ise 0.0 yap, Decimal ise float yap
-                def safe_float(val):
-                    return float(val) if val is not None else 0.0
-
-                player['avg_pts'] = safe_float(player['avg_pts'])
-                player['avg_ast'] = safe_float(player['avg_ast'])
-                player['avg_reb'] = safe_float(player['avg_reb'])
-                player['avg_blk'] = safe_float(player['avg_blk'])
-                
-                final_roster.append(player)
-            
-            team['roster'] = final_roster
-            team['season_type'] = season_param 
+            # Frontend patlamasın diye boş objeler ekliyoruz
+            # (Çünkü frontend muhtemelen team.stats veya team.roster bekliyor)
+            team['stats'] = {} 
+            team['roster'] = []
+            team['season_type'] = 'DEBUG_MODE'
 
             return jsonify({"status": "success", "data": {"team": team}})
         else:
+            print("DEBUG: Takım bulunamadı.")
             return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
             
     except Exception as e:
-        print(f"DEBUG HATASI (get_team_detail): {str(e)}")
+        print(f"DEBUG HATASI: {str(e)}")
         return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
     finally:
         cursor.close()

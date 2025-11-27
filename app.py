@@ -49,7 +49,7 @@ def get_players():
         cursor.close()
         conn.close()
 
-# B. TEK OYUNCU DETAYI (HOME/AWAY/OVERALL/SEASON Destekli)
+# B. TEK OYUNCU DETAYI (HOME/AWAY/OVERALL/SEASON Destekli
 @app.route('/api/v1/players/<int:id>', methods=['GET'])
 def get_player_by_id(id):
     conn = get_db_connection()
@@ -291,71 +291,6 @@ def get_team_detail(id):
 # 4. İSTATİSTİK VE ANALİZ (STATS)
 # ---------------------------------------------------------
 
-# A. TAKIMLARI LİSTELE (Konferans Filtreli)
-@app.route('/api/v1/teams', methods=['GET'])
-def get_teams():
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    cursor = conn.cursor(dictionary=True)
-    conf_param = request.args.get('conference')
-    
-    try:
-        if conf_param:
-            cursor.execute("SELECT * FROM TEAMS WHERE conference = %s", (conf_param,))
-        else:
-            cursor.execute("SELECT * FROM TEAMS")
-        teams = cursor.fetchall()
-        return jsonify({"status": "success", "results": len(teams), "data": {"teams": teams}})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# B. TAKIM DETAYI VE KADROSU - **YENİ EKLENDİ (İSTEDİĞİN KISIM)**
-@app.route('/api/v1/teams/<int:id>', methods=['GET'])
-def get_team_detail(id):
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # 1. Takım Bilgisi
-        cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
-        team = cursor.fetchone()
-        
-        if team:
-            # 2. Takım Sıralaması (Regular Season tablosundan)
-            cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
-            team_stats = cursor.fetchone()
-            team['stats'] = team_stats
-            
-            # 3. Kadro (Roster) - Oyuncuları ve ortalama sayılarını getir
-            sql_roster = """
-                SELECT p.playerID, p.playerName, p.position, p.headshotUrl, AVG(s.PTS) as avg_pts
-                FROM PLAYERS p
-                LEFT JOIN PlayerRegularSeasonPerformance s ON p.playerID = s.playerID
-                WHERE p.teamID = %s
-                GROUP BY p.playerID
-            """
-            cursor.execute(sql_roster, (id,))
-            roster = cursor.fetchall()
-            team['roster'] = roster
-            
-            return jsonify({"status": "success", "data": {"team": team}})
-        else:
-            return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
-            
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# ---------------------------------------------------------
-# 4. İSTATİSTİK VE ANALİZ (STATS)
-# ---------------------------------------------------------
-
 # A. LİDERLER (Top Performers)
 @app.route('/api/v1/stats/leaders', methods=['GET'])
 def get_leaders():
@@ -415,5 +350,5 @@ def get_complex_stats():
         conn.close()
 
 if __name__ == '__main__':
-    # Hata düzeltildi: host="0.0.0.0"
+
     app.run(debug=True, host="0.0.0.0", port=5001)

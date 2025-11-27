@@ -1,101 +1,103 @@
+# seed_raw.py (YENİ VERİ YÜKLEYİCİ - ORM YOK)
+import mysql.connector
 import pandas as pd
-from app import app, db
-from models import Team, Player, PlayerRegularSeason, PlayerPlayoffs
+import math
+
+# Veritabanı Ayarları
+db_config = {
+    'host': "localhost",
+    'user': "root",
+    'password': "baris0624",
+    'database': "nba_db"
+}
+
+def clean_nan(value):
+    """Pandas'tan gelen NaN değerlerini None (SQL NULL) yapar"""
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    return value
 
 def load_data():
-    # 1. CSV dosyasını oku
-    filename = 'final_data.csv'
+    conn = None
     try:
-        df = pd.read_csv(filename)
-        # Sadece GENEL (OVERALL) istatistikleri alıyoruz
-        df = df[df['LOCATION'] == 'OVERALL']
-        print(f"CSV Yüklendi ve Filtrelendi: {len(df)} satır.")
-    except FileNotFoundError:
-        print(f"HATA: {filename} dosyası bulunamadı!")
-        return
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        print("Veritabanına bağlanıldı...")
 
-    with app.app_context():
-        # Veritabanını temizle ve yeniden oluştur
-        db.drop_all()
-        db.create_all()
-        print("Veritabanı tabloları sıfırlandı ve yeniden oluşturuldu.")
+        # 1. CSV'yi Oku (Dosya yolunu kendine göre düzelt)
+        df = pd.read_csv('final_data.csv') 
+        # Sadece genel (OVERALL) verileri alalım, şimdilik basit olsun
+        df = df[df['LOCATION'] == 'OVERALL'] 
 
-        # Kümeler (Sets) ile neyi eklediğimizi takip ediyoruz
+        # Kümeler (Tekrarı önlemek için)
         added_teams = set()
         added_players = set()
-        added_reg_stats = set() # Regular Season istatistiği eklenen oyuncular
-        added_playoff_stats = set() # Playoff istatistiği eklenen oyuncular
 
         for index, row in df.iterrows():
-            
-            # --- A. TAKIM EKLEME ---
-            t_id = row['TEAM_ID']
+            # --- TAKIM EKLEME ---
+            t_id = int(row['TEAM_ID'])
             if t_id not in added_teams:
-                # TEAM_NAME_x hatalı olabildiği için y sütununu kullanıyoruz
-                team_name_correct = row['TEAM_NAME_y'] 
-                
-                new_team = Team(
-                    teamID=t_id,
-                    teamName=team_name_correct, 
-                    teamAbbreviate=row['TEAM_ABBREVIATION'],
-                    conference=row['Conference'],
-                    logoUrl=row.get('Logo_URL', '')
+                sql_team = """INSERT IGNORE INTO TEAMS 
+                              (teamID, teamName, teamAbbreviation, logoUrl, conference) 
+                              VALUES (%s, %s, %s, %s, %s)"""
+                val_team = (
+                    t_id, 
+                    row.get('TEAM_NAME_y', row['TEAM_NAME_x']), 
+                    row['TEAM_ABBREVIATION'], 
+                    row.get('Logo_URL', ''),
+                    row.get('Conference', 'East') # CSV'de yoksa default East
                 )
-                db.session.add(new_team)
+                cursor.execute(sql_team, val_team)
                 added_teams.add(t_id)
 
-            # --- B. OYUNCU EKLEME ---
-            p_id = row['PLAYER_ID']
+            # --- OYUNCU EKLEME ---
+            p_id = int(row['PLAYER_ID'])
             if p_id not in added_players:
-                new_player = Player(
-                    playerID=p_id,
-                    teamID=t_id,
-                    playerName=row['PLAYER_NAME'],
-                    position=row['POSITION'],
-                    headshotUrl=row['HEADSHOT_URL']
+                sql_player = """INSERT IGNORE INTO PLAYERS 
+                                (playerID, playerName, teamID, position, headshotUrl) 
+                                VALUES (%s, %s, %s, %s, %s)"""
+                val_player = (
+                    p_id,
+                    row['PLAYER_NAME'],
+                    t_id,
+                    row.get('POSITION', 'Unknown'),
+                    row.get('HEADSHOT_URL', '')
                 )
-                db.session.add(new_player)
+                cursor.execute(sql_player, val_player)
                 added_players.add(p_id)
 
-            # --- C. İSTATİSTİK EKLEME ---
-            stats_data = {
-                'playerID': p_id,
-                'teamID': t_id,
-                'GP_X': row.get('GP_y', 0),
-                'MIN_X': row.get('MIN_x', 0),
-                'PTS': row.get('PTS', 0),
-                'REB': row.get('REB', 0),
-                'AST': row.get('AST', 0),
-                'STL': row.get('STL_x', 0),
-                'BLK': row.get('BLK_x', 0),
-                'efficiency': row.get('Efficiency', 0)
-            }
-
-            # Regular Season Kontrolü: Bu oyuncu daha önce eklendi mi?
-            if row['Season Type'] == 'Regular Season':
-                if p_id not in added_reg_stats:
-                    new_stats = PlayerRegularSeason(**stats_data)
-                    db.session.add(new_stats)
-                    added_reg_stats.add(p_id) # Listeye tik atıyoruz
+            # --- İSTATİSTİK EKLEME (PlayerRegularSeasonPerformance) ---
+            # Not: app.py'de kullanılan tablo adı bu. 
+            sql_stats = """INSERT INTO PlayerRegularSeasonPerformance 
+                           (playerID, teamID, teamName, location, GP_X, MIN_X, PTS, efficiency) 
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
             
-            # Playoff Kontrolü: Bu oyuncu daha önce eklendi mi?
-            elif row['Season Type'] == 'Playoffs':
-                 if p_id not in added_playoff_stats:
-                    new_stats = PlayerPlayoffs(**stats_data)
-                    db.session.add(new_stats)
-                    added_playoff_stats.add(p_id) # Listeye tik atıyoruz
+            # Burada CSV sütun adlarını kontrol etmelisin
+            val_stats = (
+                p_id,
+                t_id,
+                row.get('TEAM_NAME_y', ''),
+                'HOME', # CSV'den location çekmek lazım, şimdilik dummy
+                clean_nan(row.get('GP_y', 0)),
+                clean_nan(row.get('MIN_x', 0)),
+                clean_nan(row.get('PTS', 0)),
+                clean_nan(row.get('Efficiency', 0))
+            )
+            # Not: Gerçek projede tüm 20 sütunu buraya yazman lazım.
+            # Şimdilik app.py çalışsın diye temel sütunları ekledim.
+            try:
+                cursor.execute(sql_stats, val_stats)
+            except mysql.connector.Error as err:
+                print(f"Hata (Stats): {err}")
 
-        # Değişiklikleri kaydet
-        try:
-            db.session.commit()
-            print(f"🎉 BAŞARILI: Veritabanı doldu!")
-            print(f"- {len(added_teams)} Takım")
-            print(f"- {len(added_players)} Oyuncu")
-            print(f"- {len(added_reg_stats)} Normal Sezon İstatistiği")
-            print(f"- {len(added_playoff_stats)} Playoff İstatistiği")
-        except Exception as e:
-            db.session.rollback()
-            print(f"❌ KAYIT HATASI: {e}")
+        conn.commit()
+        print(f"BAŞARILI: {len(added_teams)} Takım ve {len(added_players)} Oyuncu yüklendi.")
+
+    except mysql.connector.Error as err:
+        print(f"HATA: {err}")
+    finally:
+        if conn:
+            conn.close()
 
 if __name__ == '__main__':
     load_data()

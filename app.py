@@ -244,7 +244,7 @@ def get_team_detail(id):
         # 2. Playoff performansı
         cursor.execute("""
             SELECT *
-            FROM TeamPlayoffPerformance
+            FROM TeamPlayoffsPerformance
             WHERE teamID = %s
         """, (id,))
         playoff_stats = cursor.fetchone()

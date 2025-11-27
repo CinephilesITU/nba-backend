@@ -225,31 +225,40 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# B. TAKIM DETAYI VE KADROSU - **YENİ EKLENDİ (İSTEDİĞİN KISIM)**
+# B. TAKIM DETAYI VE KADROSU (DÜZELTİLMİŞ VERSİYON)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    
     cursor = conn.cursor(dictionary=True)
     
     try:
-        # 1. Takım Bilgisi
+    
         cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
         team = cursor.fetchone()
         
         if team:
-            # 2. Takım Sıralaması (Regular Season tablosundan)
+            # 2. Takım Sıralaması (Regular Season)
             cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
             team_stats = cursor.fetchone()
-            team['stats'] = team_stats
             
-            # 3. Kadro (Roster) - Oyuncuları ve ortalama sayılarını getir
+            # Veri varsa ekle, yoksa boş obje gönder (Frontend patlamasın diye)
+            team['stats'] = team_stats if team_stats else {}
+            
+            # 3. Kadro (Roster) - GROUP BY DÜZELTİLDİ
+            # MySQL Strict Mode hatasını önlemek için SELECT'teki tüm sütunları GROUP BY'a ekledik.
             sql_roster = """
-                SELECT p.playerID, p.playerName, p.position, p.headshotUrl, AVG(s.PTS) as avg_pts
+                SELECT 
+                    p.playerID, 
+                    p.playerName, 
+                    p.position, 
+                    p.headshotUrl, 
+                    AVG(s.PTS) as avg_pts
                 FROM PLAYERS p
                 LEFT JOIN PlayerRegularSeasonPerformance s ON p.playerID = s.playerID
                 WHERE p.teamID = %s
-                GROUP BY p.playerID
+                GROUP BY p.playerID, p.playerName, p.position, p.headshotUrl
             """
             cursor.execute(sql_roster, (id,))
             roster = cursor.fetchall()
@@ -260,7 +269,9 @@ def get_team_detail(id):
             return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
             
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        # Hatayı terminale yazdır ki sunucu loglarında görebilelim
+        print(f"DEBUG HATASI (get_team_detail): {str(e)}")
+        return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
     finally:
         cursor.close()
         conn.close()
@@ -328,5 +339,5 @@ def get_complex_stats():
         conn.close()
 
 if __name__ == '__main__':
-    # Hata düzeltildi: host="0.0.0.0"
+
     app.run(debug=True, host="0.0.0.0", port=5001)

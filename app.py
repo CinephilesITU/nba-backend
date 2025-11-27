@@ -7,15 +7,15 @@ app = Flask(__name__)
 CORS(app) # Frontend ile iletişimi açar
 
 # ---------------------------------------------------------
-# 1. VERİTABANI BAĞLANTISI (Hardcoded / Sabit Şifreli)
+# 1. VERİTABANI BAĞLANTISI
 # ---------------------------------------------------------
 def get_db_connection():
     try:
         conn = mysql.connector.connect(
-            host="127.0.0.1",
+            host="127.0.0.1",   # Windows'ta localhost yerine 127.0.0.1 daha kararlidir
             user="root",        # Kullanıcı adı
-            password="",        # Şifreniz varsa buraya yazın
-            database="nba_db" 
+            password="baris0624",        # Şifre
+            database="nba_db"   # Veritabanı adı
         )
         return conn
     except mysql.connector.Error as err:
@@ -37,6 +37,7 @@ def get_players():
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     
     cursor = conn.cursor(dictionary=True)
+    # Performans icin limit koyduk
     sql = "SELECT * FROM PLAYERS LIMIT 100"
     
     try:
@@ -49,42 +50,34 @@ def get_players():
         cursor.close()
         conn.close()
 
-# B. TEK OYUNCU DETAYI (HOME/AWAY/OVERALL/SEASON Destekli)
+# B. TEK OYUNCU DETAYI (BLK_X Hatası Giderilmiş Versiyon)
 @app.route('/api/v1/players/<int:id>', methods=['GET'])
 def get_player_by_id(id):
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
     
-    location_param = request.args.get('location', 'OVERALL') 
-    season_param = request.args.get('season', 'REGULAR')
-    
-    table_name = "PlayerPlayoffsPerformance" if season_param == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
-    
     try:
-        # 1. Oyuncu Bilgisi
+        # 1. Oyuncu Temel Bilgisi
         cursor.execute("SELECT * FROM PLAYERS WHERE playerID = %s", (id,))
         player = cursor.fetchone()
         
         if player:
             # 2. İstatistikler
-            if location_param == 'OVERALL':
-                # Agregation (Toplama)
-                sql_stats = f"""
-                    SELECT 
-                        SUM(GP_X) as GP_X, AVG(MIN_X) as MIN_X, AVG(PTS) as PTS, AVG(REB) as REB, 
-                        AVG(AST) as AST, AVG(steal) as steal, 
-                        AVG(efficiency) as efficiency, '{location_param}' as location, '{season_param}' as season_type
-                    FROM {table_name} 
-                    WHERE playerID = %s GROUP BY playerID
-                """
-                cursor.execute(sql_stats, (id,))
-            else:
-                # Direkt Sorgu
-                sql_stats = f"SELECT * FROM {table_name} WHERE playerID = %s AND location = %s LIMIT 1"
-                cursor.execute(sql_stats, (id, location_param))
-            
+            # DİKKAT: 'SELECT *' yapmıyoruz çünkü BLK_X sütunu yok.
+            # Sadece var olan sütunları (steal, REB, AST vs.) çekiyoruz.
+            sql_stats = """
+                SELECT playerID, teamID, teamName, location, GP_X, MIN_X, 
+                       PTS, REB, AST, steal, TOV, efficiency,
+                       FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT, FTM, FTA, FT_PCT,
+                       offensiveREB, defensiveREB, PLUS_MINUS
+                FROM PlayerRegularSeasonPerformance 
+                WHERE playerID = %s 
+                LIMIT 1
+            """
+            cursor.execute(sql_stats, (id,))
             stats = cursor.fetchone()
+            
             player['stats'] = stats
             return jsonify({"status": "success", "data": {"player": player}})
         else:
@@ -121,7 +114,7 @@ def add_player():
         cursor.close()
         conn.close()
 
-# D. OYUNCU GÜNCELLE (UPDATE) - SENDE EKSİKTİ, EKLENDİ
+# D. OYUNCU GÜNCELLE (UPDATE)
 @app.route('/api/v1/players/<int:id>', methods=['PUT'])
 def update_player(id):
     data = request.json
@@ -166,8 +159,10 @@ def delete_player(id):
     cursor = conn.cursor()
     
     try:
+        # Önce istatistikleri temizle (Foreign Key hatasını önlemek için)
         cursor.execute("DELETE FROM PlayerRegularSeasonPerformance WHERE playerID = %s", (id,))
         cursor.execute("DELETE FROM PlayerPlayoffsPerformance WHERE playerID = %s", (id,))
+        # Sonra oyuncuyu sil
         cursor.execute("DELETE FROM PLAYERS WHERE playerID = %s", (id,))
         conn.commit()
         return jsonify({"status": "success", "message": f"Oyuncu (ID: {id}) silindi"})
@@ -204,7 +199,7 @@ def search_players():
 # 3. TAKIMLAR (TEAMS)
 # ---------------------------------------------------------
 
-# A. TAKIMLARI LİSTELE (Konferans Filtreli)
+# A. TAKIMLARI LİSTELE
 @app.route('/api/v1/teams', methods=['GET'])
 def get_teams():
     conn = get_db_connection()
@@ -225,94 +220,7 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# B. TAKIM DETAYI (BASİTLEŞTİRİLMİŞ GERÇEK VERİ - JOIN/AVG YOK)
-@app.route('/api/v1/teams/<int:id>', methods=['GET'])
-def get_team_detail(id):
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # 1. ADIM: Takım Temel Bilgisi
-        print(f"DEBUG: Takım ID {id} sorgulanıyor...")
-        cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
-        team = cursor.fetchone()
-        
-        if team:
-            print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
-
-            # 2. ADIM: Takım Sıralaması (Basit Sorgu)
-            # Eğer bu tablo boşsa veya hata verirse try-except ile yakalarız
-            try:
-                cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
-                team_stats = cursor.fetchone()
-                team['stats'] = team_stats if team_stats else {}
-            except Exception as e:
-                print(f"DEBUG: İstatistik tablosu hatası: {e}")
-                team['stats'] = {} # Hata olursa boş geç, tüm işlemi durdurma
-
-            # 3. ADIM: Kadro (SADECE PLAYERS TABLOSU)
-            # Burada istatistik tablosuna JOIN yapmıyoruz. Sadece isimleri çekiyoruz.
-            # Böylece 'Decimal' hatası veya 'GROUP BY' hatası riskini sıfıra indiriyoruz.
-            sql_roster = """
-                SELECT playerID, playerName, position, headshotUrl 
-                FROM PLAYERS 
-                WHERE teamID = %s
-            """
-            cursor.execute(sql_roster, (id,))
-            roster = cursor.fetchall()
-            
-            # Frontend'in beklediği ama bizim şu an çekmediğimiz veriler için 
-            # dummy (boş) değerler ekleyelim ki arayüz bozulmasın.
-            final_roster = []
-            for player in roster:
-                player['avg_pts'] = 0.0 # Şimdilik 0 gönderiyoruz
-                player['avg_ast'] = 0.0
-                player['avg_reb'] = 0.0
-                final_roster.append(player)
-
-            team['roster'] = final_roster
-            team['season_type'] = 'REGULAR_SIMPLE'
-
-            return jsonify({"status": "success", "data": {"team": team}})
-        else:
-            print("DEBUG: Takım ID veritabanında yok.")
-            return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
-            
-    except Exception as e:
-        print(f"DEBUG GENEL HATA: {str(e)}")
-        return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# ---------------------------------------------------------
-# 4. İSTATİSTİK VE ANALİZ (STATS)
-# ---------------------------------------------------------
-
-# A. TAKIMLARI LİSTELE (Konferans Filtreli)
-@app.route('/api/v1/teams', methods=['GET'])
-def get_teams():
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    cursor = conn.cursor(dictionary=True)
-    conf_param = request.args.get('conference')
-    
-    try:
-        if conf_param:
-            cursor.execute("SELECT * FROM TEAMS WHERE conference = %s", (conf_param,))
-        else:
-            cursor.execute("SELECT * FROM TEAMS")
-        teams = cursor.fetchall()
-        return jsonify({"status": "success", "results": len(teams), "data": {"teams": teams}})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# B. TAKIM DETAYI VE KADROSU - **YENİ EKLENDİ (İSTEDİĞİN KISIM)**
+# B. TAKIM DETAYI (Kadro ve İstatistik Dahil)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
@@ -325,21 +233,25 @@ def get_team_detail(id):
         team = cursor.fetchone()
         
         if team:
-            # 2. Takım Sıralaması (Regular Season tablosundan)
+            # 2. Takım Sıralaması
             cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
             team_stats = cursor.fetchone()
             team['stats'] = team_stats
             
-            # 3. Kadro (Roster) - Oyuncuları ve ortalama sayılarını getir
+            # 3. Kadro (Roster) - Oyuncuları Getir
+            # BLK_X hatası almamak için sadece temel bilgileri çekiyoruz
             sql_roster = """
-                SELECT p.playerID, p.playerName, p.position, p.headshotUrl, AVG(s.PTS) as avg_pts
+                SELECT p.playerID, p.playerName, p.position, p.headshotUrl
                 FROM PLAYERS p
-                LEFT JOIN PlayerRegularSeasonPerformance s ON p.playerID = s.playerID
                 WHERE p.teamID = %s
-                GROUP BY p.playerID
             """
             cursor.execute(sql_roster, (id,))
             roster = cursor.fetchall()
+            
+            # Frontend bozulmasin diye ortalama puanlari manuel ekliyoruz
+            for player in roster:
+                player['avg_pts'] = 0  # Gerekirse buraya SQL join ile veri çekilebilir
+                
             team['roster'] = roster
             
             return jsonify({"status": "success", "data": {"team": team}})
@@ -364,18 +276,22 @@ def get_leaders():
     cursor = conn.cursor(dictionary=True)
     
     category = request.args.get('category', 'PTS')
-    season = request.args.get('season', 'REGULAR')
-    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'STL', 'BLK_X']
-    if category not in valid_columns: return jsonify({"error": "Gecersiz kategori"}), 400
-
-    table_name = "PlayerRegularSeasonPerformance" if season == 'REGULAR' else "PlayerPlayoffsPerformance"
     
+    # DİKKAT: Veritabanında 'BLK_X' olmadığı için onu listeden çıkardık
+    # Yerine 'steal' (top çalma) ekledik.
+    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'steal']
+    
+    if category not in valid_columns: 
+        return jsonify({"error": "Gecersiz kategori. (PTS, AST, REB, efficiency, steal)"}), 400
+
+    table_name = "PlayerRegularSeasonPerformance"
+    
+    # Kategoriye göre en iyi 5 oyuncuyu getir
     sql = f"""
-        SELECT p.playerName, p.headshotUrl, AVG(s.{category}) as value
+        SELECT p.playerName, p.headshotUrl, s.{category} as value
         FROM {table_name} s
         JOIN PLAYERS p ON s.playerID = p.playerID
-        GROUP BY p.playerID, p.playerName, p.headshotUrl
-        ORDER BY value DESC LIMIT 5
+        ORDER BY s.{category} DESC LIMIT 5
     """
     try:
         cursor.execute(sql)
@@ -387,12 +303,16 @@ def get_leaders():
         cursor.close()
         conn.close()
 
-# B. COMPLEX QUERY
+# B. COMPLEX QUERY (ZOR SORGULAR)
 @app.route('/api/v1/stats/complex', methods=['GET'])
 def get_complex_stats():
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
+    
+    # SENARYO: Lig ortalamasından daha verimli (efficiency) oynayan oyuncuların
+    # bulunduğu takımları listele ve bu takımlardaki "Yıldız Oyuncu" sayısını getir.
+    # Konferansa göre grupla. (JOIN, NESTED QUERY, GROUP BY içerir)
     
     sql = """
     SELECT 
@@ -415,5 +335,6 @@ def get_complex_stats():
         conn.close()
 
 if __name__ == '__main__':
-    # Hata düzeltildi: host="0.0.0.0"
+    # host="0.0.0.0" -> Sunucuda dışarıya açmak için gerekli
+    # port=5001 -> Node.js ile aynı port
     app.run(debug=True, host="0.0.0.0", port=5001)

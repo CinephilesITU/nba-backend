@@ -73,7 +73,7 @@ def get_player_by_id(id):
                 sql_stats = f"""
                     SELECT 
                         SUM(GP_X) as GP_X, AVG(MIN_X) as MIN_X, AVG(PTS) as PTS, AVG(REB) as REB, 
-                        AVG(AST) as AST, AVG(steal) as steal, 
+                        AVG(AST) as AST, AVG(steal) as steal, AVG(BLK_X) as BLK_X, 
                         AVG(efficiency) as efficiency, '{location_param}' as location, '{season_param}' as season_type
                     FROM {table_name} 
                     WHERE playerID = %s GROUP BY playerID
@@ -202,93 +202,6 @@ def search_players():
 
 # ---------------------------------------------------------
 # 3. TAKIMLAR (TEAMS)
-# ---------------------------------------------------------
-
-# A. TAKIMLARI LİSTELE (Konferans Filtreli)
-@app.route('/api/v1/teams', methods=['GET'])
-def get_teams():
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    cursor = conn.cursor(dictionary=True)
-    conf_param = request.args.get('conference')
-    
-    try:
-        if conf_param:
-            cursor.execute("SELECT * FROM TEAMS WHERE conference = %s", (conf_param,))
-        else:
-            cursor.execute("SELECT * FROM TEAMS")
-        teams = cursor.fetchall()
-        return jsonify({"status": "success", "results": len(teams), "data": {"teams": teams}})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# B. TAKIM DETAYI (BASİTLEŞTİRİLMİŞ GERÇEK VERİ - JOIN/AVG YOK)
-@app.route('/api/v1/teams/<int:id>', methods=['GET'])
-def get_team_detail(id):
-    conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    
-    cursor = conn.cursor(dictionary=True)
-    
-    try:
-        # 1. ADIM: Takım Temel Bilgisi
-        print(f"DEBUG: Takım ID {id} sorgulanıyor...")
-        cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
-        team = cursor.fetchone()
-        
-        if team:
-            print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
-
-            # 2. ADIM: Takım Sıralaması (Basit Sorgu)
-            # Eğer bu tablo boşsa veya hata verirse try-except ile yakalarız
-            try:
-                cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
-                team_stats = cursor.fetchone()
-                team['stats'] = team_stats if team_stats else {}
-            except Exception as e:
-                print(f"DEBUG: İstatistik tablosu hatası: {e}")
-                team['stats'] = {} # Hata olursa boş geç, tüm işlemi durdurma
-
-            # 3. ADIM: Kadro (SADECE PLAYERS TABLOSU)
-            # Burada istatistik tablosuna JOIN yapmıyoruz. Sadece isimleri çekiyoruz.
-            # Böylece 'Decimal' hatası veya 'GROUP BY' hatası riskini sıfıra indiriyoruz.
-            sql_roster = """
-                SELECT playerID, playerName, position, headshotUrl 
-                FROM PLAYERS 
-                WHERE teamID = %s
-            """
-            cursor.execute(sql_roster, (id,))
-            roster = cursor.fetchall()
-            
-            # Frontend'in beklediği ama bizim şu an çekmediğimiz veriler için 
-            # dummy (boş) değerler ekleyelim ki arayüz bozulmasın.
-            final_roster = []
-            for player in roster:
-                player['avg_pts'] = 0.0 # Şimdilik 0 gönderiyoruz
-                player['avg_ast'] = 0.0
-                player['avg_reb'] = 0.0
-                final_roster.append(player)
-
-            team['roster'] = final_roster
-            team['season_type'] = 'REGULAR_SIMPLE'
-
-            return jsonify({"status": "success", "data": {"team": team}})
-        else:
-            print("DEBUG: Takım ID veritabanında yok.")
-            return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
-            
-    except Exception as e:
-        print(f"DEBUG GENEL HATA: {str(e)}")
-        return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
-    finally:
-        cursor.close()
-        conn.close()
-
-# ---------------------------------------------------------
-# 4. İSTATİSTİK VE ANALİZ (STATS)
 # ---------------------------------------------------------
 
 # A. TAKIMLARI LİSTELE (Konferans Filtreli)

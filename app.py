@@ -73,7 +73,7 @@ def get_player_by_id(id):
                 sql_stats = f"""
                     SELECT 
                         SUM(GP_X) as GP_X, AVG(MIN_X) as MIN_X, AVG(PTS) as PTS, AVG(REB) as REB, 
-                        AVG(AST) as AST, AVG(steal) as steal,
+                        AVG(AST) as AST, AVG(steal) as steal, AVG(BLK_X) as BLK_X, 
                         AVG(efficiency) as efficiency, '{location_param}' as location, '{season_param}' as season_type
                     FROM {table_name} 
                     WHERE playerID = %s GROUP BY playerID
@@ -225,7 +225,7 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# B. TAKIM DETAYI (BASİTLEŞTİRİLMİŞ GERÇEK VERİ - JOIN/AVG YOK)
+# B. TAKIM DETAYI VE KADROSU (FİNAL VERSİYON - GERÇEK İSTATİSTİKLER)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
@@ -233,55 +233,79 @@ def get_team_detail(id):
     
     cursor = conn.cursor(dictionary=True)
     
+    # URL'den sezon parametresini al (Varsayılan: REGULAR)
+    season_param = request.args.get('season', 'REGULAR')
+    
+    # Hangi tablolara bakacağımızı seçiyoruz
+    if season_param == 'PLAYOFF':
+        team_stats_table = "TeamPlayoffsPerformance"
+        player_stats_table = "PlayerPlayoffsPerformance"
+    else:
+        team_stats_table = "TeamRegularSeasonPerformance"
+        player_stats_table = "PlayerRegularSeasonPerformance"
+    
     try:
         # 1. ADIM: Takım Temel Bilgisi
-        print(f"DEBUG: Takım ID {id} sorgulanıyor...")
+        # Tablo adının sunucuda 'TEAMS' veya 'teams' olmasına dikkat edin.
         cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
         team = cursor.fetchone()
         
         if team:
-            print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
-
-            # 2. ADIM: Takım Sıralaması (Basit Sorgu)
-            # Eğer bu tablo boşsa veya hata verirse try-except ile yakalarız
-            try:
-                cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
-                team_stats = cursor.fetchone()
-                team['stats'] = team_stats if team_stats else {}
-            except Exception as e:
-                print(f"DEBUG: İstatistik tablosu hatası: {e}")
-                team['stats'] = {} # Hata olursa boş geç, tüm işlemi durdurma
-
-            # 3. ADIM: Kadro (SADECE PLAYERS TABLOSU)
-            # Burada istatistik tablosuna JOIN yapmıyoruz. Sadece isimleri çekiyoruz.
-            # Böylece 'Decimal' hatası veya 'GROUP BY' hatası riskini sıfıra indiriyoruz.
-            sql_roster = """
-                SELECT playerID, playerName, position, headshotUrl 
-                FROM PLAYERS 
-                WHERE teamID = %s
+            # 2. ADIM: Takım İstatistikleri
+            # Dinamik tablo adını f-string ile sorguya yerleştiriyoruz
+            sql_team_stats = f"SELECT * FROM {team_stats_table} WHERE teamID = %s"
+            cursor.execute(sql_team_stats, (id,))
+            team_stats = cursor.fetchone()
+            
+            # Veri varsa ekle, yoksa boş obje gönder
+            team['stats'] = team_stats if team_stats else {}
+            
+            # 3. ADIM: Kadro (Roster) ve Gerçek Ortalamalar
+            # JOIN işlemi ile oyuncuların performans ortalamalarını çekiyoruz.
+            sql_roster = f"""
+                SELECT 
+                    p.playerID, 
+                    p.playerName, 
+                    p.position, 
+                    p.headshotUrl, 
+                    AVG(s.PTS) as avg_pts,
+                    AVG(s.AST) as avg_ast,
+                    AVG(s.REB) as avg_reb,
+                    AVG(s.BLK_X) as avg_blk
+                FROM PLAYERS p
+                LEFT JOIN {player_stats_table} s ON p.playerID = s.playerID
+                WHERE p.teamID = %s
+                GROUP BY p.playerID, p.playerName, p.position, p.headshotUrl
             """
             cursor.execute(sql_roster, (id,))
             roster = cursor.fetchall()
-            
-            # Frontend'in beklediği ama bizim şu an çekmediğimiz veriler için 
-            # dummy (boş) değerler ekleyelim ki arayüz bozulmasın.
+
+            # --- KRİTİK: Decimal -> Float Dönüşümü ---
             final_roster = []
             for player in roster:
-                player['avg_pts'] = 0.0 # Şimdilik 0 gönderiyoruz
-                player['avg_ast'] = 0.0
-                player['avg_reb'] = 0.0
-                final_roster.append(player)
+                # Yardımcı fonksiyon: Değer None ise 0.0, değilse float yap
+                def safe_float(val):
+                    try:
+                        return float(val) if val is not None else 0.0
+                    except:
+                        return 0.0
 
+                player['avg_pts'] = safe_float(player['avg_pts'])
+                player['avg_ast'] = safe_float(player['avg_ast'])
+                player['avg_reb'] = safe_float(player['avg_reb'])
+                player['avg_blk'] = safe_float(player['avg_blk'])
+                
+                final_roster.append(player)
+            
             team['roster'] = final_roster
-            team['season_type'] = 'REGULAR_SIMPLE'
+            team['season_type'] = season_param 
 
             return jsonify({"status": "success", "data": {"team": team}})
         else:
-            print("DEBUG: Takım ID veritabanında yok.")
             return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
             
     except Exception as e:
-        print(f"DEBUG GENEL HATA: {str(e)}")
+        print(f"DEBUG HATASI (get_team_detail): {str(e)}")
         return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
     finally:
         cursor.close()
@@ -291,7 +315,7 @@ def get_team_detail(id):
 # 4. İSTATİSTİK VE ANALİZ (STATS)
 # ---------------------------------------------------------
 
-# A. LİDERLER (Top Performers)
+# A. LİDERLER (Top Performers) - KÜSURAT DÜZELTİLDİ
 @app.route('/api/v1/stats/leaders', methods=['GET'])
 def get_leaders():
     conn = get_db_connection()
@@ -300,21 +324,35 @@ def get_leaders():
     
     category = request.args.get('category', 'PTS')
     season = request.args.get('season', 'REGULAR')
-    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'STL']
+    valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'STL', 'BLK_X']
     if category not in valid_columns: return jsonify({"error": "Gecersiz kategori"}), 400
 
     table_name = "PlayerRegularSeasonPerformance" if season == 'REGULAR' else "PlayerPlayoffsPerformance"
     
+    # DÜZELTME 1: SQL içinde ROUND fonksiyonu ile virgülden sonra 1 basamağa yuvarladık.
     sql = f"""
-        SELECT p.playerName, p.headshotUrl, AVG(s.{category}) as value
+        SELECT 
+            p.playerName, 
+            p.headshotUrl, 
+            ROUND(AVG(s.{category}), 1) as value 
         FROM {table_name} s
         JOIN PLAYERS p ON s.playerID = p.playerID
         GROUP BY p.playerID, p.playerName, p.headshotUrl
-        ORDER BY value DESC LIMIT 5
+        ORDER BY value DESC 
+        LIMIT 5
     """
     try:
         cursor.execute(sql)
         results = cursor.fetchall()
+        
+        # DÜZELTME 2: MySQL 'Decimal' tipinde döndürebilir, bunu Python 'float'a çeviriyoruz.
+        # Böylece JSON hatası almazsın ve sayı 30.1 gibi temiz gelir.
+        for row in results:
+             if row['value'] is not None:
+                 row['value'] = float(row['value'])
+             else:
+                 row['value'] = 0.0
+
         return jsonify({"status": "success", "category": category, "data": results})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

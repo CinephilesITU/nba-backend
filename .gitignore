@@ -1,8 +1,20 @@
-# Bağımlılıklar
-node_modules/
+# Python sanal ortamı
+nba_env/
+venv/
+env/
 
-# Gizli Çevre Değişkenleri
+# Python önbellek dosyaları (Gereksiz)
+__pycache__/
+*.pyc
+
+# Mac/Windows sistem dosyaları
+.DS_Store
+Thumbs.db
+
+# Ortam değişkenleri (Şifreler vs. varsa buraya konur)
 .env
 
-# Loglar
-*.log
+# Veritabanı (İsteğe bağlı - Eğer hocaya içi dolu DB göndereceksen bunu silme. 
+# Ama normalde yerel DB repoya atılmaz, seed.py ile oluşturulur.)
+# nba_stats.db
+# instance/

@@ -82,18 +82,42 @@ def get_teams():
 # CRUD İŞLEMLERİ (CREATE, UPDATE, DELETE)
 # ----------------------------------------------------------------
 
-# 4. YENİ OYUNCU EKLE (CREATE)
+# --- VALIDASYON YARDIMCISI ---
+def validate_player_data(data):
+    """Gelen verinin kurallara uygunluğunu kontrol eder."""
+    errors = []
+    
+    # Kural 1: İsim Kontrolü
+    if 'playerName' in data and len(data['playerName']) < 2:
+        errors.append("Oyuncu ismi en az 2 karakter olmalıdır.")
+    
+    # Kural 2: Pozisyon Kontrolü (Sadece belirli pozisyonlar)
+    valid_positions = ['Guard', 'Forward', 'Center', 'G', 'F', 'C']
+    if 'position' in data and data['position'] not in valid_positions:
+        # İsteğe bağlı: Hata vermek yerine uyarabiliriz ama şimdilik katı olalım
+        pass # Şimdilik serbest bırakıyorum, çok kısıtlamayalım.
+        
+    # Kural 3: İstatistik Kontrolleri (Eğer veriyle birlikte istatistik gelirse)
+    # Negatif sayı girilmesini engelle
+    # (Bu örnekte temel veriyi kontrol ediyoruz, frontend istatistik göndermiyor ama hazırlık olsun)
+    
+    return errors
+
+# 4. YENİ OYUNCU EKLE (CREATE) 
 @app.route('/api/players', methods=['POST'])
 def add_player():
-    data = request.json # Frontend'den gelen veriyi al
+    data = request.json 
     
-    # Basit Validasyon: İsim ve Takım ID zorunlu olsun
+    # 1. Temel Eksiklik Kontrolü
     if not data.get('playerName') or not data.get('teamID'):
         return jsonify({'error': 'Eksik veri: playerName ve teamID zorunludur.'}), 400
     
-    # Yeni ID oluştur (En son ID'nin bir fazlası veya rastgele)
-    # Gerçek projede veritabanı bunu otomatik yapar (Auto Increment), 
-    # ama biz manuel ID verdiğimiz için en büyük ID'yi bulup 1 ekleyelim.
+    # 2. Mantıksal Validasyon (YENİ)
+    validation_errors = validate_player_data(data)
+    if validation_errors:
+        return jsonify({'error': 'Validasyon Hatası', 'details': validation_errors}), 400
+    
+    # ID Oluşturma
     max_id = db.session.query(db.func.max(Player.playerID)).scalar() or 1000000
     new_id = int(max_id) + 1
     
@@ -102,7 +126,7 @@ def add_player():
             playerID=new_id,
             teamID=data['teamID'],
             playerName=data['playerName'],
-            position=data.get('position', 'Unknown'), # Verilmezse varsayılan
+            position=data.get('position', 'Unknown'),
             headshotUrl=data.get('headshotUrl', '')
         )
         db.session.add(new_player)
@@ -112,13 +136,17 @@ def add_player():
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
-# 5. OYUNCU GÜNCELLE (UPDATE)
+# 5. OYUNCU GÜNCELLE (UPDATE) 
 @app.route('/api/players/<int:id>', methods=['PUT'])
 def update_player(id):
     player = Player.query.get_or_404(id)
     data = request.json
 
-    # Gelen veriye göre alanları güncelle
+    # Validasyon (YENİ)
+    validation_errors = validate_player_data(data)
+    if validation_errors:
+        return jsonify({'error': 'Validasyon Hatası', 'details': validation_errors}), 400
+
     if 'playerName' in data:
         player.playerName = data['playerName']
     if 'teamID' in data:

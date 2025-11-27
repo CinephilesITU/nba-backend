@@ -186,7 +186,7 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# B. TAKIM DETAYI (SADECE TEAMS TABLOSU - DEBUG MODU)
+# B. TAKIM DETAYI (BASİTLEŞTİRİLMİŞ GERÇEK VERİ - JOIN/AVG YOK)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
@@ -195,28 +195,54 @@ def get_team_detail(id):
     cursor = conn.cursor(dictionary=True)
     
     try:
-        # SADECE ANA TABLOYA BAKIYORUZ
-        print(f"DEBUG: Takım ID {id} için TEAMS tablosu sorgulanıyor...")
-        
+        # 1. ADIM: Takım Temel Bilgisi
+        print(f"DEBUG: Takım ID {id} sorgulanıyor...")
         cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
         team = cursor.fetchone()
         
         if team:
             print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
+
+            # 2. ADIM: Takım Sıralaması (Basit Sorgu)
+            # Eğer bu tablo boşsa veya hata verirse try-except ile yakalarız
+            try:
+                cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
+                team_stats = cursor.fetchone()
+                team['stats'] = team_stats if team_stats else {}
+            except Exception as e:
+                print(f"DEBUG: İstatistik tablosu hatası: {e}")
+                team['stats'] = {} # Hata olursa boş geç, tüm işlemi durdurma
+
+            # 3. ADIM: Kadro (SADECE PLAYERS TABLOSU)
+            # Burada istatistik tablosuna JOIN yapmıyoruz. Sadece isimleri çekiyoruz.
+            # Böylece 'Decimal' hatası veya 'GROUP BY' hatası riskini sıfıra indiriyoruz.
+            sql_roster = """
+                SELECT playerID, playerName, position, headshotUrl 
+                FROM PLAYERS 
+                WHERE teamID = %s
+            """
+            cursor.execute(sql_roster, (id,))
+            roster = cursor.fetchall()
             
-            # Frontend patlamasın diye boş objeler ekliyoruz
-            # (Çünkü frontend muhtemelen team.stats veya team.roster bekliyor)
-            team['stats'] = {} 
-            team['roster'] = []
-            team['season_type'] = 'DEBUG_MODE'
+            # Frontend'in beklediği ama bizim şu an çekmediğimiz veriler için 
+            # dummy (boş) değerler ekleyelim ki arayüz bozulmasın.
+            final_roster = []
+            for player in roster:
+                player['avg_pts'] = 0.0 # Şimdilik 0 gönderiyoruz
+                player['avg_ast'] = 0.0
+                player['avg_reb'] = 0.0
+                final_roster.append(player)
+
+            team['roster'] = final_roster
+            team['season_type'] = 'REGULAR_SIMPLE'
 
             return jsonify({"status": "success", "data": {"team": team}})
         else:
-            print("DEBUG: Takım bulunamadı.")
+            print("DEBUG: Takım ID veritabanında yok.")
             return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
             
     except Exception as e:
-        print(f"DEBUG HATASI: {str(e)}")
+        print(f"DEBUG GENEL HATA: {str(e)}")
         return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
     finally:
         cursor.close()

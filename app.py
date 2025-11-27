@@ -270,7 +270,7 @@ def get_team_detail(id):
                     p.headshotUrl, 
                     AVG(s.PTS) as avg_pts,
                     AVG(s.AST) as avg_ast,
-                    AVG(s.REB) as avg_reb,
+                    AVG(s.REB) as avg_reb
                 FROM PLAYERS p
                 LEFT JOIN {player_stats_table} s ON p.playerID = s.playerID
                 WHERE p.teamID = %s

@@ -229,37 +229,37 @@ def get_teams():
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
-    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
-    
+    if not conn:
+        return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
-    
+
     try:
-        # SADECE ANA TABLOYA BAKIYORUZ
-        print(f"DEBUG: Takım ID {id} için TEAMS tablosu sorgulanıyor...")
-        
+        # 1. Takım bilgisi
         cursor.execute("SELECT * FROM TEAMS WHERE teamID = %s", (id,))
         team = cursor.fetchone()
-        
-        if team:
-            print(f"DEBUG: Takım bulundu -> {team.get('teamName')}")
-            
-            # Frontend patlamasın diye boş objeler ekliyoruz
-            # (Çünkü frontend muhtemelen team.stats veya team.roster bekliyor)
-            team['stats'] = {} 
-            team['roster'] = []
-            team['season_type'] = 'DEBUG_MODE'
 
-            return jsonify({"status": "success", "data": {"team": team}})
-        else:
-            print("DEBUG: Takım bulunamadı.")
+        if not team:
             return jsonify({"status": "fail", "message": "Takım bulunamadı"}), 404
-            
+
+        # 2. Playoff performansı
+        cursor.execute("""
+            SELECT *
+            FROM TeamPlayoffPerformance
+            WHERE teamID = %s
+        """, (id,))
+        playoff_stats = cursor.fetchone()
+
+        team["playoff_stats"] = playoff_stats
+
+        return jsonify({"status": "success", "data": {"team": team}})
+
     except Exception as e:
-        print(f"DEBUG HATASI: {str(e)}")
-        return jsonify({"error": f"Sunucu Hatası: {str(e)}"}), 500
+        return jsonify({"error": str(e)}), 500
+
     finally:
         cursor.close()
         conn.close()
+
 
 # ---------------------------------------------------------
 # 4. İSTATİSTİK VE ANALİZ (STATS)

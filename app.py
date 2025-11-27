@@ -49,7 +49,7 @@ def get_players():
         cursor.close()
         conn.close()
 
-# B. TEK OYUNCU DETAYI (HOME/AWAY/OVERALL/SEASON Destekli)
+# B. TEK OYUNCU DETAYI (HOME/AWAY/OVERALL/SEASON Destekli
 @app.route('/api/v1/players/<int:id>', methods=['GET'])
 def get_player_by_id(id):
     conn = get_db_connection()

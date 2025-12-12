@@ -4,7 +4,7 @@ import mysql.connector
 import random
 
 app = Flask(__name__)
-CORS(app)
+CORS(app) 
 
 # ---------------------------------------------------------
 # 1. VERİTABANI BAĞLANTISI
@@ -13,41 +13,24 @@ def get_db_connection():
     try:
         conn = mysql.connector.connect(
             host="127.0.0.1",
-            user="root",
-            password="",
-            database="nba_db"   
+            user="root",        
+            password="",        # BURAYA KENDİ ŞİFRENİ YAZ
+            database="nba_db" 
         )
         return conn
     except mysql.connector.Error as err:
         print(f"HATA: Veritabanına bağlanılamadı. Detay: {err}")
         return None
 
-# YARDIMCI FONKSİYON: İSTATİSTİKLERİ YUVARLA
-def round_stats(stats_dict):
-    """Sözlük içindeki float değerleri virgülden sonra 1 basamağa yuvarlar."""
-    if not stats_dict:
-        return stats_dict
-    
-    # Yuvarlanacak alanlar
-    target_keys = ['PTS', 'AST', 'REB', 'efficiency', 'steal', 'BLK', 'MIN_X', 'GP_X', 'FGM', 'FGA', 'FG_PCT', 'FG3M', 'FG3A', 'FG3_PCT', 'FTM', 'FTA', 'FT_PCT', 'avg_pts']
-    
-    for key, value in stats_dict.items():
-        if key in target_keys and value is not None:
-            try:
-                # Sayıya çevir ve yuvarla
-                stats_dict[key] = round(float(value), 1)
-            except:
-                pass # Sayı değilse dokunma
-    return stats_dict
-
 @app.route('/')
 def home():
-    return "NBA Backend Calisiyor (SQL Versiyon - Yuvarlama Fix)!"
+    return "NBA Backend Calisiyor (SQL Versiyon - vFinal GOLD)!"
 
 # ---------------------------------------------------------
 # 2. OYUNCULAR (PLAYERS)
 # ---------------------------------------------------------
 
+# A. TÜM OYUNCULARI LİSTELE
 @app.route('/api/v1/players', methods=['GET'])
 def get_players():
     conn = get_db_connection()
@@ -66,36 +49,35 @@ def get_players():
         cursor.close()
         conn.close()
 
-# TEK OYUNCU DETAYI (YUVARLAMA EKLENDİ)
+# B. TEK OYUNCU DETAYI (BLK_X HATASI ÇÖZÜLDÜ + YUVARLAMA)
 @app.route('/api/v1/players/<int:id>', methods=['GET'])
 def get_player_by_id(id):
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
     
+    # Season/Location parametrelerini kullanıyoruz
+    season_param = request.args.get('season', 'REGULAR')
+    table_name = "PlayerPlayoffsPerformance" if season_param == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
+    
     try:
-        # 1. Oyuncu Bilgisi (İsmi tam alıyoruz)
         cursor.execute("SELECT * FROM PLAYERS WHERE playerID = %s", (id,))
         player = cursor.fetchone()
         
         if player:
-            # 2. İstatistikler
-            sql_stats = """
-                SELECT playerID, teamID, teamName, location, GP_X, MIN_X, 
-                       PTS, REB, AST, steal, TOV, efficiency,
-                       FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT, FTM, FTA, FT_PCT,
-                       offensiveREB, defensiveREB, PLUS_MINUS
-                FROM PlayerRegularSeasonPerformance 
-                WHERE playerID = %s 
-                LIMIT 1
+            # BLK_X HATASI ÇÖZÜMÜ: Sadece güvenli sütunları istiyoruz ve yuvarlıyoruz.
+            sql_stats = f"""
+                SELECT 
+                    playerID, teamID, teamName, location, GP_X, 
+                    ROUND(MIN_X, 1) as MIN_X, ROUND(PTS, 1) as PTS, ROUND(REB, 1) as REB, 
+                    ROUND(AST, 1) as AST, ROUND(steal, 1) as steal, 
+                    ROUND(efficiency, 1) as efficiency
+                FROM {table_name} 
+                WHERE playerID = %s LIMIT 1
             """
             cursor.execute(sql_stats, (id,))
             stats = cursor.fetchone()
             
-            # BURADA YUVARLAMA YAPIYORUZ
-            if stats:
-                stats = round_stats(stats)
-
             player['stats'] = stats
             return jsonify({"status": "success", "data": {"player": player}})
         else:
@@ -106,7 +88,7 @@ def get_player_by_id(id):
         cursor.close()
         conn.close()
 
-# YENİ OYUNCU EKLE
+# C. YENİ OYUNCU EKLE (CREATE) - [ADMIN PAGE İÇİN]
 @app.route('/api/v1/players', methods=['POST'])
 def add_player():
     data = request.json
@@ -132,7 +114,7 @@ def add_player():
         cursor.close()
         conn.close()
 
-# OYUNCU GÜNCELLE
+# D. OYUNCU GÜNCELLE (UPDATE) - [ADMIN PAGE İÇİN]
 @app.route('/api/v1/players/<int:id>', methods=['PUT'])
 def update_player(id):
     data = request.json
@@ -169,7 +151,7 @@ def update_player(id):
         cursor.close()
         conn.close()
 
-# OYUNCU SİL
+# E. OYUNCU SİL (DELETE) - [ADMIN PAGE İÇİN]
 @app.route('/api/v1/players/<int:id>', methods=['DELETE'])
 def delete_player(id):
     conn = get_db_connection()
@@ -188,7 +170,7 @@ def delete_player(id):
         cursor.close()
         conn.close()
 
-# OYUNCU ARAMA
+# F. OYUNCU ARAMA (SEARCH)
 @app.route('/api/v1/players/search', methods=['GET'])
 def search_players():
     conn = get_db_connection()
@@ -215,6 +197,7 @@ def search_players():
 # 3. TAKIMLAR (TEAMS)
 # ---------------------------------------------------------
 
+# A. TAKIMLARI LİSTELE
 @app.route('/api/v1/teams', methods=['GET'])
 def get_teams():
     conn = get_db_connection()
@@ -235,12 +218,15 @@ def get_teams():
         cursor.close()
         conn.close()
 
-# TAKIM DETAYI (KADRO PUANLARI YUVARLANDI)
+# B. TAKIM DETAYI VE KADROSU (YUVARLAMA + GERÇEK İSTATİSTİKLER)
 @app.route('/api/v1/teams/<int:id>', methods=['GET'])
 def get_team_detail(id):
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
+    
+    season_param = request.args.get('season', 'REGULAR')
+    player_stats_table = "PlayerPlayoffsPerformance" if season_param == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
     
     try:
         # 1. Takım Bilgisi
@@ -248,28 +234,33 @@ def get_team_detail(id):
         team = cursor.fetchone()
         
         if team:
-            # 2. Takım Sıralaması
+            # 2. Takım Sıralaması (TeamStats)
             cursor.execute("SELECT * FROM TeamRegularSeasonPerformance WHERE teamID = %s", (id,))
             team_stats = cursor.fetchone()
             team['stats'] = team_stats
             
-            # 3. KADRO (ROSTER) - ORTALAMA PUAN
-            sql_roster = """
-                SELECT p.playerID, p.playerName, p.position, p.headshotUrl, AVG(s.PTS) as avg_pts
+            # 3. KADRO (ROSTER) - ORTALAMA PUANLAR (YUVARLAMA VAR)
+            sql_roster = f"""
+                SELECT 
+                    p.playerID, p.playerName, p.position, p.headshotUrl, 
+                    ROUND(AVG(s.PTS), 1) as avg_pts,
+                    ROUND(AVG(s.AST), 1) as avg_ast,
+                    ROUND(AVG(s.REB), 1) as avg_reb
                 FROM PLAYERS p
-                LEFT JOIN PlayerRegularSeasonPerformance s ON p.playerID = s.playerID
+                LEFT JOIN {player_stats_table} s ON p.playerID = s.playerID
                 WHERE p.teamID = %s
                 GROUP BY p.playerID, p.playerName, p.position, p.headshotUrl
             """
             cursor.execute(sql_roster, (id,))
             roster = cursor.fetchall()
             
-            # YUVARLAMA İŞLEMİ BURADA
+            # Decimal -> Float çevirimi
             for player in roster:
-                if player['avg_pts']:
-                    player['avg_pts'] = round(float(player['avg_pts']), 1)
-                else:
-                    player['avg_pts'] = 0.0
+                for key in ['avg_pts', 'avg_ast', 'avg_reb']:
+                    try:
+                        player[key] = float(player[key]) if player[key] is not None else 0.0
+                    except:
+                        player[key] = 0.0
                 
             team['roster'] = roster
             
@@ -283,11 +274,86 @@ def get_team_detail(id):
         cursor.close()
         conn.close()
 
+# C. YENİ TAKIM EKLE (CREATE) - [ADMIN PAGE İÇİN]
+@app.route('/api/v1/teams', methods=['POST'])
+def add_team():
+    data = request.json
+    if not data.get('teamName') or not data.get('teamID') or not data.get('conference'):
+        return jsonify({"error": "Eksik veri: teamName, teamID ve conference zorunlu."}), 400
+
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    sql = """INSERT INTO TEAMS (teamID, teamName, teamAbbreviation, logoUrl, conference) 
+             VALUES (%s, %s, %s, %s, %s)"""
+    val = (data['teamID'], data['teamName'], data.get('teamAbbreviation', 'N/A'), data.get('logoUrl', ''), data['conference'])
+    
+    try:
+        cursor.execute(sql, val)
+        conn.commit()
+        return jsonify({"status": "success", "message": "Takım başarıyla eklendi!"}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# D. TAKIM GÜNCELLE (UPDATE) - [ADMIN PAGE İÇİN]
+@app.route('/api/v1/teams/<int:id>', methods=['PUT'])
+def update_team(id):
+    data = request.json
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    fields = []
+    values = []
+    
+    if 'teamName' in data: fields.append("teamName = %s"); values.append(data['teamName'])
+    if 'conference' in data: fields.append("conference = %s"); values.append(data['conference'])
+        
+    if not fields: return jsonify({"error": "Güncellenecek veri yok"}), 400
+        
+    values.append(id)
+    sql = f"UPDATE TEAMS SET {', '.join(fields)} WHERE teamID = %s"
+    
+    try:
+        cursor.execute(sql, tuple(values))
+        conn.commit()
+        return jsonify({"status": "success", "message": "Takım güncellendi"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# E. TAKIM SİL (DELETE) - [ADMIN PAGE İÇİN]
+@app.route('/api/v1/teams/<int:id>', methods=['DELETE'])
+def delete_team(id):
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    try:
+        # Önce bu takıma ait oyuncuları silmemiz gerekir (Foreign Key)
+        # Bu, çok riskli ve uzun bir işlem olduğu için:
+        # Ya CASCADE ayarını DB'de yaptık ya da sadece takımı siliyoruz (DB hatası verecek)
+        cursor.execute("DELETE FROM TEAMS WHERE teamID = %s", (id,))
+        
+        conn.commit()
+        return jsonify({"status": "success", "message": f"Takım (ID: {id}) silindi"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
 # ---------------------------------------------------------
 # 4. İSTATİSTİK VE ANALİZ (STATS)
 # ---------------------------------------------------------
 
-# LİDERLER (YUVARLAMA EKLENDİ)
+# A. LİDERLER (Top Performers)
 @app.route('/api/v1/stats/leaders', methods=['GET'])
 def get_leaders():
     conn = get_db_connection()
@@ -296,14 +362,13 @@ def get_leaders():
     
     category = request.args.get('category', 'PTS')
     valid_columns = ['PTS', 'AST', 'REB', 'efficiency', 'steal']
-    
-    if category not in valid_columns: 
-        return jsonify({"error": "Gecersiz kategori. (PTS, AST, REB, efficiency, steal)"}), 400
+    if category not in valid_columns: return jsonify({"error": "Gecersiz kategori"}), 400
 
     table_name = "PlayerRegularSeasonPerformance"
     
     sql = f"""
-        SELECT p.playerName, p.headshotUrl, AVG(s.{category}) as value
+        SELECT 
+            p.playerName, p.headshotUrl, ROUND(AVG(s.{category}), 1) as value
         FROM {table_name} s
         JOIN PLAYERS p ON s.playerID = p.playerID
         GROUP BY p.playerID, p.playerName, p.headshotUrl
@@ -313,9 +378,8 @@ def get_leaders():
         cursor.execute(sql)
         results = cursor.fetchall()
         
-        # YUVARLAMA BURADA
         for r in results:
-            if r['value']: r['value'] = round(float(r['value']), 1)
+            if r['value'] is not None: r['value'] = float(r['value'])
 
         return jsonify({"status": "success", "category": category, "data": results})
     except Exception as e:
@@ -324,14 +388,13 @@ def get_leaders():
         cursor.close()
         conn.close()
 
-# COMPLEX QUERY
+# B. COMPLEX QUERY
 @app.route('/api/v1/stats/complex', methods=['GET'])
 def get_complex_stats():
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
     
-    # YUVARLAMA SQL İÇİNDE YAPILIYOR (AVG(...))
     sql = """
     SELECT 
         t.teamName, t.conference, COUNT(p.playerID) as StarPlayerCount, ROUND(AVG(stats.efficiency), 1) as AvgTeamEfficiency

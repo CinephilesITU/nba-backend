@@ -100,16 +100,28 @@ def add_player():
     cursor = conn.cursor()
     
     new_id = random.randint(1000000, 9999999)
-    sql = """INSERT INTO PLAYERS (playerID, playerName, teamID, position, headshotUrl) 
-             VALUES (%s, %s, %s, %s, %s)"""
-    val = (new_id, data['playerName'], data['teamID'], data.get('position', 'Unknown'), data.get('headshotUrl', ''))
     
+    # 1. Oyuncu Bilgisi Ekleme
+    sql_player = """INSERT INTO PLAYERS (playerID, playerName, teamID, position, headshotUrl) 
+             VALUES (%s, %s, %s, %s, %s)"""
+    val_player = (new_id, data['playerName'], data['teamID'], data.get('position', 'Unknown'), data.get('headshotUrl', ''))
+    
+    # 2. Oyuncuya Sıfır İstatistik Ekleme (Foreign Key Hatasını Önlemek ve Transaction Göstermek İçin)
+    # Not: PlayerStats tablosunun PK'si farklı ise bu başarısız olabilir.
+    sql_stats = """INSERT INTO PlayerRegularSeasonPerformance (playerID, teamID, teamName, location, GP_X) 
+                   VALUES (%s, %s, 'Unknown', 'OVERALL', 0)"""
+    val_stats = (new_id, data['teamID'])
+
     try:
-        cursor.execute(sql, val)
-        conn.commit()
-        return jsonify({"status": "success", "message": "Oyuncu eklendi", "id": new_id}), 201
+        # İŞLEM BAŞLANGICI
+        cursor.execute(sql_player, val_player) # 1. Adım: Oyuncuyu Ekle
+        cursor.execute(sql_stats, val_stats)   # 2. Adım: İlk istatistiği Ekle (Hata olursa buraya kadar olan her şey geri alınır)
+        
+        conn.commit() # İKİ İŞLEM DE BAŞARILIYSA KAYDET
+        return jsonify({"status": "success", "message": "Oyuncu ve temel istatistiği başarıyla eklendi!", "id": new_id}), 201
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        conn.rollback() # HATA OLURSA YAPILAN HER ŞEYİ İPTAL ET (Transaction)
+        return jsonify({"error": f"Transaction Hatası: {str(e)}"}), 500
     finally:
         cursor.close()
         conn.close()

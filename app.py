@@ -14,7 +14,7 @@ def get_db_connection():
         conn = mysql.connector.connect(
             host="127.0.0.1",
             user="root",        
-            password="",        # BURAYA KENDİ ŞİFRENİ YAZ
+            password="",    
             database="nba_db" 
         )
         return conn
@@ -355,6 +355,60 @@ def delete_team(id):
         
         conn.commit()
         return jsonify({"status": "success", "message": f"Takım (ID: {id}) silindi"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+        
+# F. ARENA DETAYI (YENİ EKLENEN TABLO İÇİN API)
+@app.route('/api/v1/teams/<int:id>/arena', methods=['GET'])
+def get_team_arena(id):
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor(dictionary=True)
+    
+    # TEAMS tablosu ile TeamArenaDetails tablosunu JOIN yapıyoruz
+    sql = """
+        SELECT * FROM TeamArenaDetails tad
+        WHERE tad.teamID = %s
+    """
+    try:
+        cursor.execute(sql, (id,))
+        arena_details = cursor.fetchone()
+        
+        if arena_details:
+            return jsonify({"status": "success", "data": {"arena": arena_details}})
+        else:
+            return jsonify({"status": "fail", "message": "Arena bilgisi bulunamadı"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# G. ARENA FİKSTÜRÜ (YENİ EKLENEN TABLO İÇİN API)
+@app.route('/api/v1/teams/<int:id>/fixtures', methods=['GET'])
+def get_team_fixtures(id):
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor(dictionary=True)
+
+    # 4 Tablo JOIN: TEAMS -> TeamArenaDetails -> TeamFixtures
+    sql = """
+        SELECT tf.*
+        FROM TEAMS t
+        JOIN TeamArenaDetails tad ON t.teamID = tad.teamID
+        JOIN TeamFixtures tf ON tad.arenaDetailID = tf.arenaDetailID
+        WHERE t.teamID = %s
+        ORDER BY tf.matchDate DESC
+        LIMIT 10
+    """
+    try:
+        cursor.execute(sql, (id,))
+        fixtures = cursor.fetchall()
+        
+        return jsonify({"status": "success", "results": len(fixtures), "data": {"fixtures": fixtures}})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:

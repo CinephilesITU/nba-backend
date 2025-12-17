@@ -1,0 +1,12 @@
+venv/
+nba_env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.git/
+.gitignore
+.env
+*.md
+*.csv
+.DS_Store

@@ -18,12 +18,12 @@ USE_CLOUD_DB = os.environ.get('USE_CLOUD_DB', 'false').lower() == 'true'
 def get_db_connection():
     try:
         if USE_CLOUD_DB:
-            # Railway MySQL Bağlantısı
+            # Google Cloud SQL Bağlantısı
             conn = mysql.connector.connect(
-                host=os.environ.get('MYSQLHOST', 'maglev.proxy.rlwy.net'),
-                port=int(os.environ.get('MYSQLPORT', 22162)),
+                host=os.environ.get('MYSQLHOST', '34.22.203.23'),
+                port=int(os.environ.get('MYSQLPORT', 3306)),
                 user=os.environ.get('MYSQLUSER', 'root'),
-                password=os.environ.get('MYSQL_ROOT_PASSWORD', 'dyChflihNewcQAbTgjZoBiHPiLSoWsTt'),
+                password=os.environ.get('MYSQL_ROOT_PASSWORD', 'NbaBackend2024!'),
                 database=os.environ.get('MYSQL_DATABASE', 'nba_db')
             )
         else:

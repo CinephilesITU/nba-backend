@@ -5,8 +5,7 @@ This documentation provides details for the RESTful API developed for the NBA 20
 The backend is built using **Flask** and **MySQL Connector**. It utilizes **Raw SQL** queries for all database operations (No ORM used), strictly adhering to project constraints.
 
 ## 🔗 Base URL
-All API requests should be prefixed with:
-`http://[SERVER_IP]:5001/api/v1`
+Production Server: `http://134.122.55.126:5001/api/v1`
 
 * **Local Development:** `http://localhost:5001/api/v1`
 * **Production:** Replace `localhost` with the server IP.

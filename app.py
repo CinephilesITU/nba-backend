@@ -73,7 +73,11 @@ def get_player_by_id(id):
                 sql_stats = f"""
                     SELECT 
                         SUM(GP_X) as GP_X, AVG(MIN_X) as MIN_X, AVG(PTS) as PTS, AVG(REB) as REB, 
+<<<<<<< Updated upstream
                         AVG(AST) as AST, AVG(steal) as steal,
+=======
+                        AVG(AST) as AST, AVG(steal) as steal, AVG(BLK_X) as BLK_X, 
+>>>>>>> Stashed changes
                         AVG(efficiency) as efficiency, '{location_param}' as location, '{season_param}' as season_type
                     FROM {table_name} 
                     WHERE playerID = %s GROUP BY playerID
@@ -270,7 +274,12 @@ def get_team_detail(id):
                     p.headshotUrl, 
                     AVG(s.PTS) as avg_pts,
                     AVG(s.AST) as avg_ast,
+<<<<<<< Updated upstream
                     AVG(s.REB) as avg_reb
+=======
+                    AVG(s.REB) as avg_reb,
+                    AVG(s.BLK_X) as avg_blk
+>>>>>>> Stashed changes
                 FROM PLAYERS p
                 LEFT JOIN {player_stats_table} s ON p.playerID = s.playerID
                 WHERE p.teamID = %s
@@ -292,6 +301,10 @@ def get_team_detail(id):
                 player['avg_pts'] = safe_float(player['avg_pts'])
                 player['avg_ast'] = safe_float(player['avg_ast'])
                 player['avg_reb'] = safe_float(player['avg_reb'])
+<<<<<<< Updated upstream
+=======
+                player['avg_blk'] = safe_float(player['avg_blk'])
+>>>>>>> Stashed changes
                 
                 final_roster.append(player)
             
@@ -387,4 +400,8 @@ def get_complex_stats():
 
 if __name__ == '__main__':
 
+<<<<<<< Updated upstream
     app.run(debug=True, host="0.0.0.0", port=5001)
+=======
+    app.run(debug=True, host="0.0.0.0", port=5001)
+>>>>>>> Stashed changes

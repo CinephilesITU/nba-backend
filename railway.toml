@@ -1,0 +1,15 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "gunicorn app:app --bind 0.0.0.0:$PORT"
+healthcheckPath = "/api/v1/health"
+healthcheckTimeout = 100
+
+[env]
+USE_CLOUD_DB = "true"
+MYSQLHOST = "maglev.proxy.rlwy.net"
+MYSQLPORT = "22162"
+MYSQLUSER = "root"
+MYSQL_ROOT_PASSWORD = "dyChflihNewcQAbTgjZoBiHPiLSoWsTt"
+MYSQL_DATABASE = "nba_db"

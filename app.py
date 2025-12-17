@@ -2,21 +2,38 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import mysql.connector
 import random
+import os
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)  # Frontend ile iletişimi açar
 
 # ---------------------------------------------------------
-# 1. VERİTABANI BAĞLANTISI (Hardcoded / Sabit Şifreli)
+# 1. VERİTABANI BAĞLANTISI
 # ---------------------------------------------------------
+
+# Railway veya Local ortam kontrolü
+USE_CLOUD_DB = os.environ.get('USE_CLOUD_DB', 'false').lower() == 'true'
+
 def get_db_connection():
     try:
-        conn = mysql.connector.connect(
-            host="127.0.0.1",
-            user="root",        # Kullanıcı adı
-            password="",        # Şifreniz varsa buraya yazın
-            database="nba_db" 
-        )
+        if USE_CLOUD_DB:
+            # Railway MySQL Bağlantısı
+            conn = mysql.connector.connect(
+                host=os.environ.get('MYSQLHOST', 'maglev.proxy.rlwy.net'),
+                port=int(os.environ.get('MYSQLPORT', 22162)),
+                user=os.environ.get('MYSQLUSER', 'root'),
+                password=os.environ.get('MYSQL_ROOT_PASSWORD', 'dyChflihNewcQAbTgjZoBiHPiLSoWsTt'),
+                database=os.environ.get('MYSQL_DATABASE', 'nba_db')
+            )
+        else:
+            # Local MySQL Bağlantısı
+            conn = mysql.connector.connect(
+                host="127.0.0.1",
+                user="root",
+                password="",
+                database="nba_db" 
+            )
         return conn
     except mysql.connector.Error as err:
         print(f"HATA: Veritabanına bağlanılamadı. Detay: {err}")
@@ -29,15 +46,58 @@ def safe_float(val):
     except:
         return 0.0
 
+# Yardımcı fonksiyon: Pagination hesaplama
+def paginate(page, per_page, total_items):
+    total_pages = (total_items + per_page - 1) // per_page  # Yukarı yuvarlama
+    return {
+        "page": page,
+        "per_page": per_page,
+        "total_items": total_items,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1
+    }
+
 @app.route('/')
 def home():
     return "NBA Backend Calisiyor (SQL Versiyon - vFinal)!"
 
 # ---------------------------------------------------------
+# HEALTH CHECK - Sunucu ve DB durumu
+# ---------------------------------------------------------
+@app.route('/api/v1/health', methods=['GET'])
+def health_check():
+    health = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": "unknown",
+        "environment": "cloud" if USE_CLOUD_DB else "local"
+    }
+    
+    try:
+        conn = get_db_connection()
+        if conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            health["database"] = "connected"
+            cursor.close()
+            conn.close()
+        else:
+            health["database"] = "disconnected"
+            health["status"] = "unhealthy"
+    except Exception as e:
+        health["database"] = f"error: {str(e)}"
+        health["status"] = "unhealthy"
+    
+    status_code = 200 if health["status"] == "healthy" else 503
+    return jsonify(health), status_code
+
+# ---------------------------------------------------------
 # 2. OYUNCULAR (PLAYERS)
 # ---------------------------------------------------------
 
-# A. TÜM OYUNCULARI LİSTELE (Filtreleme destekli)
+# A. TÜM OYUNCULARI LİSTELE (Pagination + Filtreleme destekli)
 @app.route('/api/v1/players', methods=['GET'])
 def get_players():
     conn = get_db_connection()
@@ -45,24 +105,46 @@ def get_players():
     
     cursor = conn.cursor(dictionary=True)
     
+    # Pagination parametreleri
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(per_page, 100)  # Maksimum 100
+    offset = (page - 1) * per_page
+    
     # Opsiyonel filtreler
     team_id = request.args.get('team_id')
     position = request.args.get('position')
-    limit = request.args.get('limit', 100, type=int)
     
     try:
+        # Toplam kayıt sayısını al
         if team_id:
-            sql = "SELECT * FROM PLAYERS WHERE teamID = %s LIMIT %s"
-            cursor.execute(sql, (team_id, limit))
+            cursor.execute("SELECT COUNT(*) as total FROM PLAYERS WHERE teamID = %s", (team_id,))
         elif position:
-            sql = "SELECT * FROM PLAYERS WHERE position LIKE %s LIMIT %s"
-            cursor.execute(sql, (f"%{position}%", limit))
+            cursor.execute("SELECT COUNT(*) as total FROM PLAYERS WHERE position LIKE %s", (f"%{position}%",))
         else:
-            sql = "SELECT * FROM PLAYERS LIMIT %s"
-            cursor.execute(sql, (limit,))
+            cursor.execute("SELECT COUNT(*) as total FROM PLAYERS")
+        
+        total_items = cursor.fetchone()['total']
+        
+        # Sayfalanmış veriyi al
+        if team_id:
+            sql = "SELECT * FROM PLAYERS WHERE teamID = %s LIMIT %s OFFSET %s"
+            cursor.execute(sql, (team_id, per_page, offset))
+        elif position:
+            sql = "SELECT * FROM PLAYERS WHERE position LIKE %s LIMIT %s OFFSET %s"
+            cursor.execute(sql, (f"%{position}%", per_page, offset))
+        else:
+            sql = "SELECT * FROM PLAYERS LIMIT %s OFFSET %s"
+            cursor.execute(sql, (per_page, offset))
             
         players = cursor.fetchall()
-        return jsonify({"status": "success", "results": len(players), "data": {"players": players}})
+        
+        return jsonify({
+            "status": "success", 
+            "results": len(players), 
+            "pagination": paginate(page, per_page, total_items),
+            "data": {"players": players}
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -235,21 +317,42 @@ def search_players():
 # 3. TAKIMLAR (TEAMS)
 # ---------------------------------------------------------
 
-# A. TAKIMLARI LİSTELE (Konferans Filtreli)
+# A. TAKIMLARI LİSTELE (Pagination + Konferans Filtreli)
 @app.route('/api/v1/teams', methods=['GET'])
 def get_teams():
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
+    
+    # Pagination parametreleri
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(per_page, 100)
+    offset = (page - 1) * per_page
+    
     conf_param = request.args.get('conference')
     
     try:
+        # Toplam sayı
         if conf_param:
-            cursor.execute("SELECT * FROM TEAMS WHERE conference = %s", (conf_param,))
+            cursor.execute("SELECT COUNT(*) as total FROM TEAMS WHERE conference = %s", (conf_param,))
         else:
-            cursor.execute("SELECT * FROM TEAMS")
+            cursor.execute("SELECT COUNT(*) as total FROM TEAMS")
+        total_items = cursor.fetchone()['total']
+        
+        # Sayfalanmış veri
+        if conf_param:
+            cursor.execute("SELECT * FROM TEAMS WHERE conference = %s LIMIT %s OFFSET %s", (conf_param, per_page, offset))
+        else:
+            cursor.execute("SELECT * FROM TEAMS LIMIT %s OFFSET %s", (per_page, offset))
+        
         teams = cursor.fetchall()
-        return jsonify({"status": "success", "results": len(teams), "data": {"teams": teams}})
+        return jsonify({
+            "status": "success", 
+            "results": len(teams), 
+            "pagination": paginate(page, per_page, total_items),
+            "data": {"teams": teams}
+        })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -472,26 +575,24 @@ def get_team_fixtures(id):
 # 4. FIXTURES (MAÇLAR) - YENİ MODÜL
 # ---------------------------------------------------------
 
-# A. TÜM MAÇLARI LİSTELE
+# A. TÜM MAÇLARI LİSTELE (Pagination destekli)
 @app.route('/api/v1/fixtures', methods=['GET'])
 def get_all_fixtures():
     conn = get_db_connection()
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor(dictionary=True)
     
-    limit = request.args.get('limit', 50, type=int)
+    # Pagination parametreleri
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    per_page = min(per_page, 100)
+    offset = (page - 1) * per_page
+    
     round_num = request.args.get('round')
     team = request.args.get('team')
     
     try:
-        base_sql = """
-            SELECT f.matchID, f.matchNumber, f.roundNumber, f.matchDate, 
-                   f.homeTeam, f.awayTeam, f.result,
-                   a.arena, a.city, a.teamID
-            FROM TeamFixtures f
-            JOIN TeamArenaDetails a ON f.arenaDetailID = a.arenaDetailID
-        """
-        
+        # Filtre koşulları
         conditions = []
         params = []
         
@@ -503,11 +604,25 @@ def get_all_fixtures():
             conditions.append("(f.homeTeam LIKE %s OR f.awayTeam LIKE %s)")
             params.extend([f"%{team}%", f"%{team}%"])
         
-        if conditions:
-            base_sql += " WHERE " + " AND ".join(conditions)
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
         
-        base_sql += " ORDER BY f.matchDate DESC LIMIT %s"
-        params.append(limit)
+        # Toplam sayı
+        count_sql = f"SELECT COUNT(*) as total FROM TeamFixtures f {where_clause}"
+        cursor.execute(count_sql, tuple(params))
+        total_items = cursor.fetchone()['total']
+        
+        # Sayfalanmış veri
+        base_sql = f"""
+            SELECT f.matchID, f.matchNumber, f.roundNumber, f.matchDate, 
+                   f.homeTeam, f.awayTeam, f.result,
+                   a.arena, a.city, a.teamID
+            FROM TeamFixtures f
+            JOIN TeamArenaDetails a ON f.arenaDetailID = a.arenaDetailID
+            {where_clause}
+            ORDER BY f.matchDate DESC 
+            LIMIT %s OFFSET %s
+        """
+        params.extend([per_page, offset])
         
         cursor.execute(base_sql, tuple(params))
         fixtures = cursor.fetchall()
@@ -520,6 +635,7 @@ def get_all_fixtures():
         return jsonify({
             "status": "success",
             "results": len(fixtures),
+            "pagination": paginate(page, per_page, total_items),
             "data": {"fixtures": fixtures}
         })
     except Exception as e:

@@ -1,141 +1,349 @@
-# 🏀 NBA Database Project - API Documentation (v2.1)
+# 🏀 NBA Backend API Documentation
 
-This documentation provides details for the RESTful API developed for the NBA 2023-24 Season Database Project.
-
-The backend is built using **Flask** and **MySQL Connector**. It utilizes **Raw SQL** queries for all database operations (No ORM used), strictly adhering to project constraints.
-
-## 🔗 Base URL
-All API requests should be prefixed with:
-`http://[SERVER_IP]:5001/api/v1`
-
-* **Local Development:** `http://localhost:5001/api/v1`
-* **Production:** Replace `localhost` with the server IP.
+**Base URL:** `https://nba-backend-391303839683.europe-west1.run.app`
 
 ---
 
-## 1. 🏃‍♂️ PLAYERS ENDPOINTS
+## 📊 Genel Bilgiler
 
-### 📌 List All Players
-Retrieves a list of all players in the database.
-* **Endpoint:** `/players`
-* **Method:** `GET`
-* **Query Parameters:** None
-* **Response:**
-    ```json
-    {
-      "status": "success",
-      "results": 100,
-      "data": { "players": [...] }
-    }
-    ```
+### Response Formatı
+Tüm API'ler JSON formatında döner:
+```json
+{
+  "status": "success",
+  "results": 10,
+  "pagination": {...},
+  "data": {...}
+}
+```
 
-### 📌 Get Player Details & Stats
-Retrieves detailed information and statistics for a specific player. Supports dynamic filtering by season type and location.
-* **Endpoint:** `/players/<id>`
-* **Method:** `GET`
-* **Query Parameters:**
-    * `location`: `OVERALL` (Default - Calculated via Aggregation), `HOME`, `AWAY`
-    * `season`: `REGULAR` (Default), `PLAYOFF`
-* **Examples:**
-    * `GET /players/1631260` (Returns Overall Regular Season Stats)
-    * `GET /players/1631260?season=PLAYOFF&location=HOME` (Returns Home Playoff Stats)
-
-### 📌 Search Players
-Search for players by name using SQL `LIKE` queries.
-* **Endpoint:** `/players/search`
-* **Method:** `GET`
-* **Query Parameters:**
-    * `q`: The name or partial name to search for (e.g., "LeBron").
-* **Example:** `GET /players/search?q=Curry`
-
-### 📌 Create Player (Admin)
-Adds a new player to the database manually.
-* **Endpoint:** `/players`
-* **Method:** `POST`
-* **Body (JSON):**
-    ```json
-    {
-      "playerName": "New Player Name",
-      "teamID": 1610612749,
-      "position": "Guard",
-      "headshotUrl": "[http://example.com/photo.png](http://example.com/photo.png)"
-    }
-    ```
-
-### 📌 Update Player (Admin)
-Updates specific fields of an existing player.
-* **Endpoint:** `/players/<id>`
-* **Method:** `PUT`
-* **Body (JSON):** (Include only fields to be updated)
-    ```json
-    {
-      "teamID": 1610612750,
-      "position": "Center"
-    }
-    ```
-
-### 📌 Delete Player (Admin)
-Deletes a player and cascades the deletion to their statistics in related tables to maintain referential integrity.
-* **Endpoint:** `/players/<id>`
-* **Method:** `DELETE`
+### Pagination (Sayfalama)
+Liste endpoint'leri sayfalama destekler:
+- `page`: Sayfa numarası (varsayılan: 1)
+- `per_page`: Sayfa başına kayıt (varsayılan: 20, max: 100)
 
 ---
 
-## 2. 🏢 TEAMS ENDPOINTS
+## 1. 🏥 Health Check
 
-### 📌 List Teams
-Retrieves a list of NBA teams. Supports filtering by conference.
-* **Endpoint:** `/teams`
-* **Method:** `GET`
-* **Query Parameters:**
-    * `conference`: `East` or `West`. (Optional. If omitted, returns all teams).
-* **Examples:**
-    * `GET /teams` (All 30 Teams)
-    * `GET /teams?conference=East` (Only Eastern Conference Teams)
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/health` | Sunucu ve veritabanı durumu |
 
----
-
-## 3. 📊 STATISTICS & ANALYTICS
-
-### 📌 Top Performers (Leaders)
-Retrieves the top 5 players for a specific statistical category. Uses `ORDER BY` and `JOIN` operations.
-* **Endpoint:** `/stats/leaders`
-* **Method:** `GET`
-* **Query Parameters:**
-    * `category`: `PTS` (Points), `AST` (Assists), `REB` (Rebounds), `efficiency`, `STL` (Steals), `BLK_X` (Blocks). (Default: PTS)
-    * `season`: `REGULAR` or `PLAYOFF`.
-* **Example:** `GET /stats/leaders?category=AST&season=REGULAR`
-
-### 📌 Complex Analysis
-Executes a complex SQL query involving joins across 4 tables, nested queries, and grouping.
-* **Logic:** Lists teams that have players performing above the league average efficiency, ordered by the count of such "star" players.
-* **Endpoint:** `/stats/complex`
-* **Method:** `GET`
+**Örnek Response:**
+```json
+{
+  "status": "healthy",
+  "database": "connected",
+  "environment": "cloud",
+  "timestamp": "2025-12-17T15:25:00"
+}
+```
 
 ---
 
-## 🛠 Status Codes
+## 2. 🏀 Teams (Takımlar)
 
-| Code | Description |
-| :--- | :--- |
-| **200** | Success |
-| **201** | Created Successfully |
-| **400** | Bad Request (Missing parameters or invalid data) |
-| **404** | Not Found (Player or Team does not exist) |
-| **500** | Internal Server Error (Database connection issues, etc.) |
+### Tüm Takımları Listele
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/teams` | Tüm takımları listeler |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| page | int | Sayfa numarası |
+| per_page | int | Sayfa başına kayıt |
+| conference | string | `East` veya `West` |
+
+**Örnek:**
+```
+GET /api/v1/teams?conference=East&page=1&per_page=10
+```
 
 ---
 
-## ⚙️ Setup & Installation
+### Takım Detayı
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/teams/{teamID}` | Takım detayı + kadro |
 
-1.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-2.  **Environment Variables:**
-    Create a `.env` file and configure your DB credentials (`DB_HOST`, `DB_USER`, `DB_PASSWORD`).
-3.  **Run Server:**
-    ```bash
-    python app.py
-    ```
-    The server will start on port **5001**.
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| season | string | `REGULAR` veya `PLAYOFF` |
+
+**Örnek:**
+```
+GET /api/v1/teams/1610612738?season=REGULAR
+```
+
+**Response içeriği:**
+- Takım bilgileri (isim, logo, konferans)
+- Takım sıralaması (winRank, defRatingRank...)
+- Kadro listesi (her oyuncunun ortalama istatistikleri)
+
+---
+
+### Takım Sıralamaları (Standings)
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/teams/standings` | Konferans sıralaması |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| conference | string | `East` veya `West` |
+| season | string | `REGULAR` veya `PLAYOFF` |
+
+**Örnek:**
+```
+GET /api/v1/teams/standings?conference=East&season=REGULAR
+```
+
+---
+
+### Takım Arena Bilgisi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/teams/{teamID}/arena` | Arena detayları |
+
+**Response:**
+- Şehir, eyalet, arena adı
+- Kapasite
+- Koordinatlar (latitude, longitude)
+- Saat dilimi
+
+---
+
+### Takım Maç Programı
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/teams/{teamID}/fixtures` | Takımın maçları |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| limit | int | Maksimum maç sayısı |
+
+---
+
+## 3. 👤 Players (Oyuncular)
+
+### Tüm Oyuncuları Listele
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/players` | Tüm oyuncuları listeler |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| page | int | Sayfa numarası |
+| per_page | int | Sayfa başına kayıt |
+| team_id | int | Takım ID'sine göre filtrele |
+| position | string | Pozisyona göre filtrele |
+
+---
+
+### Oyuncu Arama
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/players/search` | İsme göre arama |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| q | string | Arama terimi (min 2 karakter) |
+
+**Örnek:**
+```
+GET /api/v1/players/search?q=LeBron
+```
+
+---
+
+### Oyuncu Detayı
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/players/{playerID}` | Oyuncu bilgisi + istatistikler |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| season | string | `REGULAR` veya `PLAYOFF` |
+| location | string | `HOME`, `AWAY` veya `OVERALL` |
+
+**Örnek:**
+```
+GET /api/v1/players/2544?season=REGULAR&location=OVERALL
+```
+
+**Response istatistikleri:**
+- PTS, AST, REB, steal, TOV
+- FG_PCT, FG3_PCT, FT_PCT
+- efficiency, GP_X, MIN_X
+
+---
+
+## 4. 📈 Stats (İstatistikler)
+
+### Kategori Liderleri
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/stats/leaders` | En iyi oyuncular |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| category | string | `PTS`, `AST`, `REB`, `steal`, `efficiency`, `FG_PCT` |
+| season | string | `REGULAR` veya `PLAYOFF` |
+| limit | int | Kaç oyuncu (varsayılan: 5) |
+
+**Örnek:**
+```
+GET /api/v1/stats/leaders?category=PTS&season=REGULAR&limit=10
+```
+
+---
+
+### Takım Karşılaştırma
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/stats/team-comparison` | İki takımı karşılaştır |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| team1 | int | İlk takım ID |
+| team2 | int | İkinci takım ID |
+| season | string | `REGULAR` veya `PLAYOFF` |
+
+**Örnek:**
+```
+GET /api/v1/stats/team-comparison?team1=1610612738&team2=1610612747
+```
+
+---
+
+## 5. 📅 Fixtures (Maçlar)
+
+### Tüm Maçlar
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/fixtures` | Tüm maçları listele |
+
+**Query Parameters:**
+| Parametre | Tip | Açıklama |
+|-----------|-----|----------|
+| page | int | Sayfa numarası |
+| per_page | int | Sayfa başına kayıt |
+| round | int | Hafta/round numarası |
+| team | string | Takım adı filtresi |
+
+---
+
+### Maç Detayı
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/fixtures/{matchID}` | Tek maç detayı |
+
+---
+
+## 6. 🏟️ Arenas
+
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/arenas` | Tüm arena bilgileri |
+
+---
+
+## 7. 🔐 Admin Panel API'leri
+
+> ⚠️ Bu API'ler POST/PUT/DELETE kullanır. Postman ile test edilmeli.
+
+### Dashboard
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| GET | `/api/v1/admin/dashboard` | Özet istatistikler |
+
+### Takım Yönetimi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/admin/teams` | Yeni takım ekle |
+| PUT | `/api/v1/admin/teams/{id}` | Takım güncelle |
+| DELETE | `/api/v1/admin/teams/{id}` | Takım sil |
+
+**POST Body örneği:**
+```json
+{
+  "teamID": 123456,
+  "teamName": "Yeni Takım",
+  "teamAbbreviation": "YT",
+  "conference": "East",
+  "logoUrl": "https://..."
+}
+```
+
+### Oyuncu Yönetimi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/players` | Yeni oyuncu ekle |
+| PUT | `/api/v1/players/{id}` | Oyuncu güncelle |
+| DELETE | `/api/v1/players/{id}` | Oyuncu sil |
+
+**POST Body örneği:**
+```json
+{
+  "playerName": "Yeni Oyuncu",
+  "teamID": 1610612738,
+  "position": "Guard",
+  "headshotUrl": "https://..."
+}
+```
+
+### Maç Yönetimi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/admin/fixtures` | Yeni maç ekle |
+| PUT | `/api/v1/admin/fixtures/{id}` | Maç güncelle |
+| DELETE | `/api/v1/admin/fixtures/{id}` | Maç sil |
+
+### Arena Yönetimi
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/admin/arenas` | Yeni arena ekle |
+| PUT | `/api/v1/admin/arenas/{id}` | Arena güncelle |
+| DELETE | `/api/v1/admin/arenas/{id}` | Arena sil |
+
+### Oyuncu İstatistikleri
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/admin/players/{id}/stats` | İstatistik ekle/güncelle |
+| DELETE | `/api/v1/admin/players/{id}/stats` | İstatistik sil |
+
+### Takım Sıralaması
+| Method | Endpoint | Açıklama |
+|--------|----------|----------|
+| POST | `/api/v1/admin/teams/{id}/ranking` | Sıralama ekle/güncelle |
+
+---
+
+## 📋 Örnek Team ID'ler
+
+| Takım | ID |
+|-------|-----|
+| Boston Celtics | 1610612738 |
+| Los Angeles Lakers | 1610612747 |
+| Golden State Warriors | 1610612744 |
+| Miami Heat | 1610612748 |
+| Dallas Mavericks | 1610612742 |
+
+## 📋 Örnek Player ID'ler
+
+| Oyuncu | ID |
+|--------|-----|
+| LeBron James | 2544 |
+| Kevin Durant | 201142 |
+| Stephen Curry | 201939 |
+| Giannis Antetokounmpo | 203507 |
+| Luka Doncic | 1629029 |

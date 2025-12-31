@@ -1203,14 +1203,44 @@ def admin_delete_arena(id):
         conn.close()
 
 # ---------------------------------------------------------
-# D. OYUNCU İSTATİSTİKLERİ - ADMIN CRUD
+# D. OYUNCU İSTATİSTİKLERİ (PLAYER STATS) - TAM ADMIN CRUD
 # ---------------------------------------------------------
 
-# Oyuncu İstatistiği Ekle/Güncelle
-@app.route('/api/v1/admin/players/<int:player_id>/stats', methods=['POST'])
-def admin_add_player_stats(player_id):
-    data = request.json
+# 1. READ (OKUMA) - Admin formunu doldurmak için
+@app.route('/api/v1/admin/players/<int:player_id>/stats', methods=['GET'])
+def admin_get_player_stats(player_id):
+    season = request.args.get('season', 'REGULAR')
+    location = request.args.get('location') # 'HOME', 'AWAY' veya 'OVERALL'
+    team_id = request.args.get('teamID')    # Composite key için gerekli olabilir
     
+    if not location or not team_id:
+        return jsonify({"error": "location ve teamID parametreleri zorunlu"}), 400
+
+    table_name = "PlayerPlayoffsPerformance" if season == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
+    
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        sql = f"SELECT * FROM {table_name} WHERE playerID = %s AND teamID = %s AND location = %s"
+        cursor.execute(sql, (player_id, team_id, location))
+        stats = cursor.fetchone()
+        
+        if stats:
+            return jsonify({"status": "success", "data": stats})
+        else:
+            return jsonify({"status": "fail", "message": "İstatistik bulunamadı"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# 2. CREATE (EKLEME) - Sadece yeni kayıt ekler
+@app.route('/api/v1/admin/players/<int:player_id>/stats', methods=['POST'])
+def admin_create_player_stats(player_id):
+    data = request.json
     if 'teamID' not in data or 'location' not in data:
         return jsonify({"error": "Eksik alanlar: teamID ve location zorunlu"}), 400
     
@@ -1221,7 +1251,15 @@ def admin_add_player_stats(player_id):
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor()
     
-    # Takım adını al
+    # Kontrol: Zaten var mı?
+    check_sql = f"SELECT 1 FROM {table_name} WHERE playerID = %s AND teamID = %s AND location = %s"
+    cursor.execute(check_sql, (player_id, data['teamID'], data['location']))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Bu oyuncunun bu takım ve konum için verisi zaten var. Güncelleme (PUT) kullanın."}), 409
+
+    # Takım adını al (Veri tutarlılığı için)
     cursor.execute("SELECT teamName FROM TEAMS WHERE teamID = %s", (data['teamID'],))
     team = cursor.fetchone()
     team_name = team[0] if team else ''
@@ -1229,14 +1267,7 @@ def admin_add_player_stats(player_id):
     sql = f"""INSERT INTO {table_name} 
               (playerID, teamID, teamName, location, GP_X, MIN_X, FGM, FGA, FG_PCT, FG3M, FG3A, FG3_PCT, 
                FTM, FTA, FT_PCT, offensiveREB, defensiveREB, REB, AST, TOV, steal, PF, PTS, PLUS_MINUS, efficiency)
-              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-              ON DUPLICATE KEY UPDATE
-              GP_X = VALUES(GP_X), MIN_X = VALUES(MIN_X), FGM = VALUES(FGM), FGA = VALUES(FGA),
-              FG_PCT = VALUES(FG_PCT), FG3M = VALUES(FG3M), FG3A = VALUES(FG3A), FG3_PCT = VALUES(FG3_PCT),
-              FTM = VALUES(FTM), FTA = VALUES(FTA), FT_PCT = VALUES(FT_PCT), offensiveREB = VALUES(offensiveREB),
-              defensiveREB = VALUES(defensiveREB), REB = VALUES(REB), AST = VALUES(AST), TOV = VALUES(TOV),
-              steal = VALUES(steal), PF = VALUES(PF), PTS = VALUES(PTS), PLUS_MINUS = VALUES(PLUS_MINUS),
-              efficiency = VALUES(efficiency)"""
+              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
     
     val = (player_id, data['teamID'], team_name, data['location'],
            data.get('GP_X', 0), data.get('MIN_X', 0), data.get('FGM', 0), data.get('FGA', 0),
@@ -1249,18 +1280,63 @@ def admin_add_player_stats(player_id):
     try:
         cursor.execute(sql, val)
         conn.commit()
-        return jsonify({"status": "success", "message": f"Oyuncu istatistiği kaydedildi ({season})"}), 201
+        return jsonify({"status": "success", "message": f"Oyuncu istatistiği başarıyla EKLENDİ ({season})"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
         conn.close()
 
-# Oyuncu İstatistiği Sil
+# 3. UPDATE (GÜNCELLEME) - Sadece var olanı günceller
+@app.route('/api/v1/admin/players/<int:player_id>/stats', methods=['PUT'])
+def admin_update_player_stats(player_id):
+    data = request.json
+    if 'teamID' not in data or 'location' not in data:
+        return jsonify({"error": "Kimlik doğrulama için teamID ve location zorunlu"}), 400
+
+    season = data.get('season', 'REGULAR')
+    table_name = "PlayerPlayoffsPerformance" if season == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
+    
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    # Sadece istatistikleri güncelliyoruz (ID'ler WHERE koşulunda)
+    sql = f"""UPDATE {table_name} SET 
+              GP_X=%s, MIN_X=%s, FGM=%s, FGA=%s, FG_PCT=%s, FG3M=%s, FG3A=%s, FG3_PCT=%s,
+              FTM=%s, FTA=%s, FT_PCT=%s, offensiveREB=%s, defensiveREB=%s, REB=%s, 
+              AST=%s, TOV=%s, steal=%s, PF=%s, PTS=%s, PLUS_MINUS=%s, efficiency=%s
+              WHERE playerID=%s AND teamID=%s AND location=%s"""
+    
+    val = (data.get('GP_X', 0), data.get('MIN_X', 0), data.get('FGM', 0), data.get('FGA', 0),
+           data.get('FG_PCT', 0), data.get('FG3M', 0), data.get('FG3A', 0), data.get('FG3_PCT', 0),
+           data.get('FTM', 0), data.get('FTA', 0), data.get('FT_PCT', 0), data.get('offensiveREB', 0),
+           data.get('defensiveREB', 0), data.get('REB', 0), data.get('AST', 0), data.get('TOV', 0),
+           data.get('steal', 0), data.get('PF', 0), data.get('PTS', 0), data.get('PLUS_MINUS', 0),
+           data.get('efficiency', 0),
+           # WHERE koşulu için:
+           player_id, data['teamID'], data['location'])
+    
+    try:
+        cursor.execute(sql, val)
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return jsonify({"status": "fail", "message": "Güncellenecek kayıt bulunamadı. Önce ekleme yapın."}), 404
+            
+        return jsonify({"status": "success", "message": f"Oyuncu istatistiği GÜNCELLENDİ ({season})"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# 4. DELETE (SİLME)
 @app.route('/api/v1/admin/players/<int:player_id>/stats', methods=['DELETE'])
 def admin_delete_player_stats(player_id):
     season = request.args.get('season', 'REGULAR')
-    location = request.args.get('location')  # Opsiyonel
+    location = request.args.get('location')  # Opsiyonel değil, kesin silmek için gerekli
+    team_id = request.args.get('teamID')     # Opsiyonel değil, kesin silmek için gerekli
     
     table_name = "PlayerPlayoffsPerformance" if season == 'PLAYOFF' else "PlayerRegularSeasonPerformance"
     
@@ -1269,13 +1345,20 @@ def admin_delete_player_stats(player_id):
     cursor = conn.cursor()
     
     try:
-        if location:
-            cursor.execute(f"DELETE FROM {table_name} WHERE playerID = %s AND location = %s", (player_id, location))
+        # Eğer location ve teamID verilirse nokta atışı silme (Güvenli olan)
+        if location and team_id:
+            cursor.execute(f"DELETE FROM {table_name} WHERE playerID = %s AND teamID = %s AND location = %s", 
+                           (player_id, team_id, location))
+        # Sadece oyuncu ID verilirse o oyuncunun o sezondaki tüm istatistiklerini sil
         else:
             cursor.execute(f"DELETE FROM {table_name} WHERE playerID = %s", (player_id,))
         
         conn.commit()
-        return jsonify({"status": "success", "message": f"Oyuncu (ID: {player_id}) istatistikleri silindi ({season})"})
+        
+        if cursor.rowcount == 0:
+             return jsonify({"status": "fail", "message": "Silinecek kayıt bulunamadı"}), 404
+
+        return jsonify({"status": "success", "message": f"Oyuncu (ID: {player_id}) istatistikleri silindi ({season})"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
@@ -1283,14 +1366,39 @@ def admin_delete_player_stats(player_id):
         conn.close()
 
 # ---------------------------------------------------------
-# E. TAKIM İSTATİSTİKLERİ - ADMIN CRUD
+# E. TAKIM İSTATİSTİKLERİ (TEAM STATS) - TAM ADMIN CRUD (AYRI AYRI)
 # ---------------------------------------------------------
 
-# Takım Sıralaması Ekle/Güncelle
-@app.route('/api/v1/admin/teams/<int:team_id>/ranking', methods=['POST'])
-def admin_add_team_ranking(team_id):
-    data = request.json
+# 1. READ (OKUMA) - Admin panelinde mevcut veriyi göstermek için
+@app.route('/api/v1/admin/teams/<int:team_id>/ranking', methods=['GET'])
+def admin_get_team_ranking(team_id):
+    season = request.args.get('season', 'REGULAR')
+    table_name = "TeamPlayoffsPerformance" if season == 'PLAYOFF' else "TeamRegularSeasonPerformance"
     
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        sql = f"SELECT * FROM {table_name} WHERE teamID = %s"
+        cursor.execute(sql, (team_id,))
+        stats = cursor.fetchone()
+        
+        if stats:
+            return jsonify({"status": "success", "data": stats})
+        else:
+            return jsonify({"status": "fail", "message": "Bu sezon için istatistik bulunamadı"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# 2. CREATE (EKLEME) - Sadece yeni kayıt ekler
+@app.route('/api/v1/admin/teams/<int:team_id>/ranking', methods=['POST'])
+def admin_create_team_ranking(team_id):
+    data = request.json
     season = data.get('season', 'REGULAR')
     table_name = "TeamPlayoffsPerformance" if season == 'PLAYOFF' else "TeamRegularSeasonPerformance"
     
@@ -1298,25 +1406,97 @@ def admin_add_team_ranking(team_id):
     if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
     cursor = conn.cursor()
     
+    # Önce kontrol et: Zaten var mı?
+    check_sql = f"SELECT 1 FROM {table_name} WHERE teamID = %s"
+    cursor.execute(check_sql, (team_id,))
+    if cursor.fetchone():
+        cursor.close()
+        conn.close()
+        return jsonify({"error": "Bu takımın bu sezon için zaten kaydı var. Güncelleme (PUT) kullanın."}), 409
+
+    # Yoksa ekle
     sql = f"""INSERT INTO {table_name} (teamID, winRank, defRatingRank, defRebRank, stealRank, blockRank)
-              VALUES (%s, %s, %s, %s, %s, %s)
-              ON DUPLICATE KEY UPDATE
-              winRank = VALUES(winRank), defRatingRank = VALUES(defRatingRank),
-              defRebRank = VALUES(defRebRank), stealRank = VALUES(stealRank), blockRank = VALUES(blockRank)"""
+              VALUES (%s, %s, %s, %s, %s, %s)"""
     
-    val = (team_id, data.get('winRank', 0), data.get('defRatingRank', 0),
-           data.get('defRebRank', 0), data.get('stealRank', 0), data.get('blockRank', 0))
+    val = (team_id, 
+           data.get('winRank', 0), 
+           data.get('defRatingRank', 0),
+           data.get('defRebRank', 0), 
+           data.get('stealRank', 0), 
+           data.get('blockRank', 0))
     
     try:
         cursor.execute(sql, val)
         conn.commit()
-        return jsonify({"status": "success", "message": f"Takım sıralaması kaydedildi ({season})"}), 201
+        return jsonify({"status": "success", "message": f"Takım sıralaması başarıyla EKLENDİ ({season})"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
         cursor.close()
         conn.close()
 
+# 3. UPDATE (GÜNCELLEME) - Sadece var olanı günceller
+@app.route('/api/v1/admin/teams/<int:team_id>/ranking', methods=['PUT'])
+def admin_update_team_ranking(team_id):
+    data = request.json
+    season = data.get('season', 'REGULAR')
+    table_name = "TeamPlayoffsPerformance" if season == 'PLAYOFF' else "TeamRegularSeasonPerformance"
+    
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    # Sadece güncelleme sorgusu
+    sql = f"""UPDATE {table_name} 
+              SET winRank=%s, defRatingRank=%s, defRebRank=%s, stealRank=%s, blockRank=%s
+              WHERE teamID=%s"""
+    
+    val = (data.get('winRank', 0), 
+           data.get('defRatingRank', 0),
+           data.get('defRebRank', 0), 
+           data.get('stealRank', 0), 
+           data.get('blockRank', 0),
+           team_id)
+    
+    try:
+        cursor.execute(sql, val)
+        conn.commit()
+        
+        # Etkilenen satır sayısını kontrol et
+        if cursor.rowcount == 0:
+            return jsonify({"status": "fail", "message": "Güncellenecek kayıt bulunamadı. Önce ekleme yapın."}), 404
+            
+        return jsonify({"status": "success", "message": f"Takım sıralaması başarıyla GÜNCELLENDİ ({season})"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+
+# 4. DELETE (SİLME) - İstatistikleri silmek için
+@app.route('/api/v1/admin/teams/<int:team_id>/ranking', methods=['DELETE'])
+def admin_delete_team_ranking(team_id):
+    season = request.args.get('season', 'REGULAR')
+    table_name = "TeamPlayoffsPerformance" if season == 'PLAYOFF' else "TeamRegularSeasonPerformance"
+    
+    conn = get_db_connection()
+    if not conn: return jsonify({"error": "DB Baglantisi Yok"}), 500
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute(f"DELETE FROM {table_name} WHERE teamID = %s", (team_id,))
+        conn.commit()
+        
+        if cursor.rowcount == 0:
+            return jsonify({"status": "fail", "message": "Silinecek kayıt bulunamadı"}), 404
+            
+        return jsonify({"status": "success", "message": f"Takım sıralaması silindi ({season})"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
+        
 # ---------------------------------------------------------
 # F. ADMIN DASHBOARD - Özet Bilgiler
 # ---------------------------------------------------------
